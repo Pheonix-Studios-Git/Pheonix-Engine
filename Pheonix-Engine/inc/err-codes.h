@@ -1,0 +1,14 @@
+#pragma once
+
+typedef enum {
+    ERR_SUCCESS = 0,
+    ERR_FALUIRE,
+    ERR_UNKNOWN,
+    ERR_USAGE,
+    ERR_INTERNAL,
+    ERR_ALLOC_FAILED,
+    ERR_WS_UNSUPPORTED,
+    ERR_WS_INIT_FAILED,
+    ERR_WS_UNINITIALIZED,
+    ERR_WS_NO_WINDOW_FOUND
+} t_err_codes;
