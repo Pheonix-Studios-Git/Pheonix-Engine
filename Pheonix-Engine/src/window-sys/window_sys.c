@@ -80,3 +80,21 @@ bool px_ws_pop_event(PX_Window* win, PX_WEvent* out) {
 
     return px_we_queue_pop(&win->queue, out);
 }
+
+t_err_codes px_ws_show_splash(PX_Window* win) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->show_splash(win);
+}
+
+t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win || !design)
+        return ERR_INTERNAL;
+
+    return g_backend->window_design(win, design);
+}

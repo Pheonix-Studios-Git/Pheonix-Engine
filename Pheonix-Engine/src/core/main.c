@@ -6,6 +6,7 @@
 
 #include <err-codes.h>
 #include <window-sys.h>
+#include <event-sys.h>
 
 typedef struct {
     bool valid;
@@ -55,6 +56,11 @@ int main(int argc, char** argv) {
         .handle = -1
     };
 
+    PX_WindowDesign main_win_design = {0};
+    main_win_design.bg_color = 0x000000;
+    main_win_design.fg_color = 0xFFFFFF;
+    main_win_design.border_radius = 20;
+
     t_err_codes last_err = ERR_SUCCESS;
     last_err = px_ws_init();
     if (last_err != ERR_SUCCESS)
@@ -65,6 +71,15 @@ int main(int argc, char** argv) {
         px_ws_shutdown();
         return last_err;
     }
+
+    last_err = px_ws_show_splash(&main_win);
+    if (last_err != ERR_SUCCESS) {
+        px_ws_destroy(&main_win);
+        px_ws_shutdown();
+        return last_err;
+    }
+
+    px_ws_window_design(&main_win, &main_win_design);
 
     bool running = true;
     while (running) {
@@ -79,11 +94,6 @@ int main(int argc, char** argv) {
         while (px_ws_pop_event(&main_win, &ev)) {
             switch (ev.type) {
                 case PX_WE_CLOSE: running = false; break;
-                case PX_WE_KEYDOWN: printf("Key Down: %d\n", ev.code); break;
-                case PX_WE_KEYUP: printf("Key Up: %d\n", ev.code); break;
-                case PX_WE_MOUSE_DOWN: printf("Mouse Down: %d at (%d,%d)\n", ev.code, ev.x, ev.y); break;
-                case PX_WE_MOUSE_UP: printf("Mouse Up: %d at (%d,%d)\n", ev.code, ev.x, ev.y); break;
-                case PX_WE_MOUSE_MOVE: printf("Mouse Move at (%d,%d)\n", ev.x, ev.y); break;
                 default: break;
             }
         }

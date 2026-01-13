@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include <err-codes.h>
 
@@ -19,7 +20,7 @@ typedef enum {
 
 typedef struct {
     PX_WE_Type type;
-    int code;
+    int keycode; // Mapped using event-sys keys
     int x, y;
 } PX_WEvent;
 
@@ -38,6 +39,17 @@ typedef struct {
     PX_WE_Queue queue;
 } PX_Window;
 
+typedef struct PX_WindowDesign {
+    uint32_t bg_color;
+    uint32_t fg_color;
+    int border_radius;
+    int border_thickness;
+    uint32_t border_color;
+    int title_bar_height;
+    uint32_t title_bar_color;
+    uint32_t title_text_color;
+} PX_WindowDesign;
+
 t_err_codes px_ws_init(void);
 void px_ws_shutdown(void);
 
@@ -49,3 +61,7 @@ void px_ws_destroy(PX_Window* win);
 t_err_codes px_ws_poll(PX_Window* win);
 bool px_ws_pop_event(PX_Window* win, PX_WEvent* out);
 
+t_err_codes px_ws_show_splash(PX_Window* win);
+t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design);
+
+t_err_codes px_ws_create_ctx(PX_Window* win);
