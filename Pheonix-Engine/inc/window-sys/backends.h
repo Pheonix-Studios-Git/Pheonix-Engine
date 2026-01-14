@@ -41,5 +41,6 @@ typedef struct px_ws_backend {
     t_err_codes (*window_design)(PX_Window*, PX_WindowDesign*);
     
     t_err_codes (*create_ctx)(PX_Window*);
+    t_err_codes (*swap_buffers)(PX_Window*);
 } t_px_ws_backend;
 

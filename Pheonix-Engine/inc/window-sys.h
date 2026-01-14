@@ -65,3 +65,4 @@ t_err_codes px_ws_show_splash(PX_Window* win);
 t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design);
 
 t_err_codes px_ws_create_ctx(PX_Window* win);
+t_err_codes px_ws_swap_buffers(PX_Window* win);

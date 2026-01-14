@@ -10,8 +10,12 @@
 #include <event-sys.h>
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
+
+#include <GL/gl.h>
+#include <GL/glx.h>
 
 struct keysym_map {
     KeySym sym;
@@ -21,6 +25,8 @@ struct keysym_map {
 struct window {
     Display* display;
     Window window;
+    GLXContext gl_ctx;
+    bool gl_ctx_valid;
     Atom wm_delete;
 };
 
@@ -235,6 +241,8 @@ static void destroy_all_windows(void) {
     struct winarray* nxt = g_windows;
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (nxt->win) {
+            if (nxt->win->gl_ctx_valid)
+                glXDestroyContext(nxt->win->display, nxt->win->gl_ctx);
             XDestroyWindow(nxt->win->display, nxt->win->window);
             free(nxt->win);
         }
@@ -347,6 +355,8 @@ static void x11_destroy(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return;
 
+    if (iwin->gl_ctx_valid)
+        glXDestroyContext(iwin->display, iwin->gl_ctx);
     XDestroyWindow(iwin->display, iwin->window);
     free(iwin);
 
@@ -495,6 +505,40 @@ static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
     return ERR_SUCCESS;
 }
 
+static t_err_codes x11_create_ctx(PX_Window* win) {
+    if (!win || win->handle < 0)
+        return ERR_INTERNAL;
+    struct window* iwin = get_window(win->handle);
+    if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
+
+    XVisualInfo* visual = glXChooseVisual(iwin->display, 0, (int[]){
+        GLX_RGBA,
+        GLX_DEPTH_SIZE, 24,
+        GLX_DOUBLEBUFFER,
+        None
+    });
+
+    GLXContext gl_ctx = glXCreateContext(iwin->display, visual, 0, True);
+    iwin->gl_ctx_valid = true;
+    iwin->gl_ctx = gl_ctx;
+    glXMakeCurrent(iwin->display, iwin->window, gl_ctx);
+
+    XFree(visual);
+
+    return ERR_SUCCESS;
+}
+
+static t_err_codes x11_swap_buffers(PX_Window* win) {
+    if (!win || win->handle < 0)
+        return ERR_INTERNAL;
+    struct window* iwin = get_window(win->handle);
+    if (!iwin || !iwin->gl_ctx_valid) return ERR_WS_NO_WINDOW_FOUND;
+
+    glXSwapBuffers(iwin->display, iwin->window);
+
+    return ERR_SUCCESS;
+}
+
 const t_px_ws_backend px_ws_backend_x11 = {
     .init = x11_init,
     .shutdown = x11_shutdown,
@@ -504,6 +548,8 @@ const t_px_ws_backend px_ws_backend_x11 = {
     .hide = x11_hide,
     .poll_events = x11_poll_events,
     .show_splash = x11_engine_splash,
-    .window_design = x11_window_design
+    .window_design = x11_window_design,
+    .create_ctx = x11_create_ctx,
+    .swap_buffers = x11_swap_buffers
 };
 

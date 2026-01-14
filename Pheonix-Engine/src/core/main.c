@@ -7,6 +7,9 @@
 #include <err-codes.h>
 #include <window-sys.h>
 #include <event-sys.h>
+#include <rendering-sys.h>
+
+#include <GL/gl.h>
 
 typedef struct {
     bool valid;
@@ -80,9 +83,14 @@ int main(int argc, char** argv) {
     }
 
     px_ws_window_design(&main_win, &main_win_design);
+    
+    px_ws_create_ctx(&main_win);
+    px_rs_init_ui(100, 50, 0, 0);
 
     bool running = true;
     while (running) {
+        px_rs_draw_panel(100, 10, 0, 0, 0.0f, 0.0f, 0.0f);
+
         last_err = px_ws_poll(&main_win);
         if (last_err != ERR_SUCCESS) {
             px_ws_destroy(&main_win);
@@ -96,7 +104,9 @@ int main(int argc, char** argv) {
                 case PX_WE_CLOSE: running = false; break;
                 default: break;
             }
-        }
+        } 
+
+        px_ws_swap_buffers(&main_win);
     }
 
     px_ws_destroy(&main_win);

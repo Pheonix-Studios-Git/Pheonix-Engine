@@ -39,7 +39,7 @@ DEFS :=
 INCS := -I$(INC_DIR)
 
 COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing
-LDFLAGS := -lX11
+LDFLAGS := -lX11 -lGL -lGLU
 
 ifeq ($(MODE),debug)
     CFLAGS := $(COMMON_CFLAGS) -g -O0 \

@@ -98,3 +98,21 @@ t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design) {
 
     return g_backend->window_design(win, design);
 }
+
+t_err_codes px_ws_create_ctx(PX_Window* win) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->create_ctx(win);
+}
+
+t_err_codes px_ws_swap_buffers(PX_Window* win) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->swap_buffers(win);
+}
