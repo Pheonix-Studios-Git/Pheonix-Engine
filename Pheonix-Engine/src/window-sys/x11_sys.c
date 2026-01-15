@@ -341,7 +341,7 @@ static t_err_codes x11_create(PX_Window* win) {
         ExposureMask
     );
 
-    XMapWindow(iwin->display, iwin->window);
+    XMapRaised(iwin->display, iwin->window); 
     XFlush(iwin->display);
 
     win->handle = append_window(iwin);
@@ -406,6 +406,16 @@ static t_err_codes x11_poll_events(PX_Window* win) {
             case ClientMessage:
                 if ((Atom)ev.xclient.data.l[0] == iwin->wm_delete)
                     we.type = PX_WE_CLOSE;
+                break;
+
+            case MapNotify:
+                XSetInputFocus(iwin->display, iwin->window, RevertToParent, CurrentTime);
+                break;
+
+            case ConfigureNotify:
+                we.type = PX_WE_RESIZE;
+                we.w = ev.xconfigure.width;
+                we.h = ev.xconfigure.height;
                 break;
 
             case KeyPress:

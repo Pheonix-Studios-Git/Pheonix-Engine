@@ -11,6 +11,7 @@
 typedef enum {
     PX_WE_NONE = 0,
     PX_WE_CLOSE,
+    PX_WE_RESIZE,
     PX_WE_KEYDOWN,
     PX_WE_KEYUP,
     PX_WE_MOUSE_DOWN,
@@ -22,6 +23,7 @@ typedef struct {
     PX_WE_Type type;
     int keycode; // Mapped using event-sys keys
     int x, y;
+    int w, h;
 } PX_WEvent;
 
 typedef struct {

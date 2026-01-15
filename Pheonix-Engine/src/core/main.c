@@ -9,8 +9,6 @@
 #include <event-sys.h>
 #include <rendering-sys.h>
 
-#include <GL/gl.h>
-
 typedef struct {
     bool valid;
     bool help;
@@ -52,17 +50,19 @@ int main(int argc, char** argv) {
         return ERR_SUCCESS;
     }
 
+    int main_win_w = 100;
+    int main_win_h = 50;
+
     PX_Window main_win = {
-        .width = 100,
-        .height = 50,
+        .width = main_win_w,
+        .height = main_win_h,
         .title = "Pheonix Engine",
         .handle = -1
     };
 
     PX_WindowDesign main_win_design = {0};
-    main_win_design.bg_color = 0x000000;
-    main_win_design.fg_color = 0xFFFFFF;
-    main_win_design.border_radius = 20;
+    main_win_design.bg_color = 0xFFFFFF;
+    main_win_design.fg_color = 0x000000;
 
     t_err_codes last_err = ERR_SUCCESS;
     last_err = px_ws_init();
@@ -85,14 +85,21 @@ int main(int argc, char** argv) {
     px_ws_window_design(&main_win, &main_win_design);
     
     px_ws_create_ctx(&main_win);
-    px_rs_init_ui(100, 50, 0, 0);
+    last_err = px_rs_init_ui((PX_Scale2){main_win_w, main_win_h});
+    if (last_err != ERR_SUCCESS) {
+        px_ws_destroy(&main_win);
+        px_ws_shutdown();
+        return last_err;
+    }
 
     bool running = true;
     while (running) {
-        px_rs_draw_panel(100, 10, 0, 0, 0.0f, 0.0f, 0.0f);
+        px_rs_ui_frame_update();
+        px_rs_draw_panel((PX_Scale2){main_win_w, 10}, (PX_Vector2){0, 0}, (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF});
 
         last_err = px_ws_poll(&main_win);
         if (last_err != ERR_SUCCESS) {
+            px_rs_shutdown_ui();
             px_ws_destroy(&main_win);
             px_ws_shutdown();
             return last_err;
@@ -102,6 +109,10 @@ int main(int argc, char** argv) {
         while (px_ws_pop_event(&main_win, &ev)) {
             switch (ev.type) {
                 case PX_WE_CLOSE: running = false; break;
+                case PX_WE_RESIZE:
+                    main_win_w = ev.w;
+                    main_win_h = ev.h;
+                    px_rs_ui_resize((PX_Scale2){ev.w, ev.h});
                 default: break;
             }
         } 
@@ -109,6 +120,7 @@ int main(int argc, char** argv) {
         px_ws_swap_buffers(&main_win);
     }
 
+    px_rs_shutdown_ui();
     px_ws_destroy(&main_win);
     px_ws_shutdown();
 

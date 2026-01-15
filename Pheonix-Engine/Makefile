@@ -39,13 +39,10 @@ DEFS :=
 INCS := -I$(INC_DIR)
 
 COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing
-LDFLAGS := -lX11 -lGL -lGLU
+LDFLAGS := -lX11 -lGL -lGLU -lGLEW
 
 ifeq ($(MODE),debug)
-    CFLAGS := $(COMMON_CFLAGS) -g -O0 \
-        -fsanitize=address,undefined \
-        -fno-omit-frame-pointer
-    LDFLAGS += -fsanitize=address,undefined
+    CFLAGS := $(COMMON_CFLAGS) -g -O0 -fno-omit-frame-pointer
 else ifeq ($(MODE),release)
     # IMPORTANT Note: intentionally unoptimized
     CFLAGS := $(COMMON_CFLAGS) -O0 -DNDEBUG
