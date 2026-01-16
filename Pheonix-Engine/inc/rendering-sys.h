@@ -1,6 +1,7 @@
 #pragma once
 
 #include <err-codes.h>
+#include <font.h>
 
 typedef struct {
     unsigned char r, g, b, a;
@@ -36,3 +37,4 @@ void px_rs_shutdown_ui(void);
 void px_rs_ui_frame_update(void);
 void px_rs_ui_resize(PX_Scale2 screen_scale);
 t_err_codes px_rs_draw_panel(PX_Scale2 scale, PX_Vector2 pos, PX_Color4 color);
+t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font);

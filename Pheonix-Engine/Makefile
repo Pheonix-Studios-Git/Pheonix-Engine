@@ -39,7 +39,7 @@ DEFS :=
 INCS := -I$(INC_DIR)
 
 COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing
-LDFLAGS := -lX11 -lGL -lGLU -lGLEW
+LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm
 
 ifeq ($(MODE),debug)
     CFLAGS := $(COMMON_CFLAGS) -g -O0 -fno-omit-frame-pointer

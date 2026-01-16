@@ -41,7 +41,7 @@ typedef struct {
     PX_WE_Queue queue;
 } PX_Window;
 
-typedef struct PX_WindowDesign {
+typedef struct {
     uint32_t bg_color;
     uint32_t fg_color;
     int border_radius;

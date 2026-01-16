@@ -14,8 +14,7 @@
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 
-#include <GL/gl.h>
-#include <GL/glx.h>
+#include <rendering-sys/opengl.h>
 
 struct keysym_map {
     KeySym sym;
