@@ -18,6 +18,8 @@ typedef struct {
     bool help;
 } t_args;
 
+// Main
+static bool engine_running = false;
 // Window Info
 static int engine_window_main_w = 1000;
 static int engine_window_main_h = 800;
@@ -40,6 +42,11 @@ static PX_Window engine_window_main = (PX_Window){
 };
 // Fonts
 static PX_Font* engine_font_ui = NULL;
+// Mouse Info
+static int engine_mouse_x = 0;
+static int engine_mouse_y = 0;
+// Rendering Objects
+static PX_Dropdown engine_menu_dropdown = {0};
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -79,16 +86,154 @@ static void parse_args(t_args* args, int argc, char** argv) {
     }
 }
 
-static void engine_cleanup(void) {
+static char* enginef_helper_strdup(const char* s) {
+    char* out = (char*)malloc(strlen(s) + 1);
+    if (!out)
+        return NULL;
+
+    strcpy(out, s);
+    out[strlen(s) + 1] = '\0';
+    return out;
+}
+
+static void enginef_cleanup(void) {
+    for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
+        if (engine_menu_dropdown.items[i].label)
+            free(engine_menu_dropdown.items[i].label);
+
+        for (int j = 0; j < engine_menu_dropdown.items[i].option_count; j++) {
+            if (engine_menu_dropdown.items[i].options[j].label)
+                free(engine_menu_dropdown.items[i].options[j].label);
+        }
+    }
+
     px_font_destroy(engine_font_ui);
     px_rs_shutdown_ui();
     px_ws_destroy(&engine_window_main);
     px_ws_shutdown();
 }
 
-static void engine_core_render(void) {
-    px_rs_draw_panel((PX_Scale2){engine_window_main_w, 30}, (PX_Vector2){0, 0}, (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF});
-    px_rs_render_text("File", 16.0f, (PX_Vector2){4, 10}, (PX_Color4){0xFF, 0x00, 0x00, 0xFF}, engine_font_ui);
+static bool enginef_mouse_over(PX_Transform2 tran) {
+    return (bool)(engine_mouse_x >= tran.pos.x &&
+           engine_mouse_x <= tran.pos.x + tran.scale.w &&
+           engine_mouse_y >= tran.pos.y &&
+           engine_mouse_y <= tran.pos.y + tran.scale.h);
+}
+
+static void enginef_init_dropdowns(void) {
+    engine_menu_dropdown.font = engine_font_ui;
+    engine_menu_dropdown.font_size = 16.0f;
+    engine_menu_dropdown.pos = (PX_Vector2){0, 0};
+    engine_menu_dropdown.width = engine_window_main_w;
+    engine_menu_dropdown.height = 30;
+    engine_menu_dropdown.color = (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF};
+    engine_menu_dropdown.hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xD4};
+    engine_menu_dropdown.text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
+    engine_menu_dropdown.hover_index = -1;
+    engine_menu_dropdown.item_count = 4;
+    engine_menu_dropdown.stext_pos = (PX_Vector2){4, 8};
+    engine_menu_dropdown.spacing = 64;
+
+    const char* menu_labels[] = {"File", "Edit", "View", "Help"};
+    const char* file_menu[] = {"New", "Open", "Save", "Save As", "Exit"};
+    const char* edit_menu[] = {"Undo", "Redo"};
+    const char* view_menu[] = {"Fullscreen"};
+    const char* help_menu[] = {"About"};
+
+    engine_menu_dropdown.items[0].option_count = 5;
+    engine_menu_dropdown.items[1].option_count = 2;
+    engine_menu_dropdown.items[2].option_count = 1;
+    engine_menu_dropdown.items[3].option_count = 1;
+
+    int x = engine_menu_dropdown.stext_pos.x;
+    for (int i = 0; i < 4; i++) {
+        PX_DropdownItem* item = &engine_menu_dropdown.items[i];
+        item->label = enginef_helper_strdup(menu_labels[i]);
+        item->height = 16;
+        item->width = px_rs_text_width(engine_font_ui, menu_labels[i], engine_menu_dropdown.font_size);
+        item->spacing = 16;
+        item->font_size = 12.0f;;
+        item->panel_color = (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF};
+        item->hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF};
+        item->text_color = (PX_Color4){0x00, 0x00, 0x00, 0xFF};
+        item->is_open = false;
+        item->hover_index = -1;
+        item->panel_tran = (PX_Transform2){
+            (PX_Vector2){x, 32},
+            (PX_Scale2){100, item->spacing * item->option_count}
+        };
+        item->stext_pos = (PX_Vector2){x + 2, 34};
+
+        x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, item->label, engine_menu_dropdown.font_size);
+
+        for (int j = 0; j < item->option_count; j++) {
+            PX_DropdownOption* option = &item->options[j];
+            const char** labels;
+
+            switch(i) {
+                case 0: labels = file_menu; break;
+                case 1: labels = edit_menu; break;
+                case 2: labels = view_menu; break;
+                case 3: labels = help_menu; break;
+                default: break;
+            }
+
+            option->label = enginef_helper_strdup(labels[j]);
+            option->height = 8;
+            option->width = px_rs_text_width(engine_font_ui, labels[j], engine_menu_dropdown.font_size);
+        }
+    }
+}
+
+static void enginef_event_mouse_click(void) {
+    // Dropdowns
+    if (enginef_mouse_over((PX_Transform2){engine_menu_dropdown.pos, (PX_Scale2){engine_menu_dropdown.width, engine_menu_dropdown.height}})) {
+        int x = engine_menu_dropdown.stext_pos.x;
+        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
+            PX_DropdownItem* item = &engine_menu_dropdown.items[i];
+
+            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, engine_menu_dropdown.stext_pos.y}, (PX_Scale2){item->width, item->height}};
+            if (enginef_mouse_over(tran)) {
+                item->is_open = item->is_open ? false : true;
+            } else {
+                item->is_open = false;
+            }
+
+            x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, item->label, engine_menu_dropdown.font_size);
+        }
+    } else {
+        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
+            PX_DropdownItem* item = &engine_menu_dropdown.items[i];
+            item->is_open = false;
+        }
+    }
+}
+
+static void enginef_event_hover_check(void) {
+    // Dropdowns
+    if (enginef_mouse_over((PX_Transform2){engine_menu_dropdown.pos, (PX_Scale2){engine_menu_dropdown.width, engine_menu_dropdown.height}})) {
+        bool hovered = false;
+        int x = engine_menu_dropdown.stext_pos.x;
+        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
+            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, engine_menu_dropdown.stext_pos.y}, (PX_Scale2){engine_menu_dropdown.items[i].width, engine_menu_dropdown.items[i].height}};
+            if (enginef_mouse_over(tran)) {
+                hovered = true;
+                engine_menu_dropdown.hover_index = i;
+                break;
+            }
+
+            x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, engine_menu_dropdown.items[i].label, engine_menu_dropdown.font_size);
+        }
+        if (!hovered)
+            engine_menu_dropdown.hover_index = -1;
+    } else {
+        engine_menu_dropdown.hover_index = -1;
+    }
+}
+
+static void enginef_core_render(void) {
+    engine_menu_dropdown.width = engine_window_main_w;
+    px_rs_draw_dropdown(&engine_menu_dropdown);
 }
 
 int main(int argc, char** argv) {
@@ -163,29 +308,42 @@ int main(int argc, char** argv) {
         return ERR_COULD_NOT_OPEN_FILE;
     }
 
+    // Load Objects
+    // Dropdowns
+    enginef_init_dropdowns();
+
     // Render
-    bool running = true;
-    while (running) {
+    engine_running = true;
+    while (engine_running) {
         px_rs_ui_frame_update();
-        engine_core_render();
+        enginef_core_render();
+        enginef_event_hover_check();
 
         last_err = px_ws_poll(&engine_window_main);
         if (last_err != ERR_SUCCESS) {
             fprintf(stderr, "Error: Failed to poll events!\n");
-            engine_cleanup();
+            enginef_cleanup();
             return last_err;
         }
 
         PX_WEvent ev;
         while (px_ws_pop_event(&engine_window_main, &ev)) {
             switch (ev.type) {
-                case PX_WE_CLOSE: running = false; break;
+                case PX_WE_CLOSE: engine_running = false; break;
                 case PX_WE_RESIZE:
                     engine_window_main_w = ev.w;
                     engine_window_main_h = ev.h;
                     engine_window_main.width = ev.w;
                     engine_window_main.height = ev.h;
                     px_rs_ui_resize((PX_Scale2){ev.w, ev.h});
+                    break;
+                case PX_WE_MOUSE_MOVE:
+                    engine_mouse_x = ev.x;
+                    engine_mouse_y = ev.y;
+                    break;
+                case PX_WE_MOUSE_DOWN:
+                    enginef_event_mouse_click();
+                    break;
                 default: break;
             }
         } 
@@ -194,7 +352,7 @@ int main(int argc, char** argv) {
     }
 
     // Cleanup
-    engine_cleanup();
+    enginef_cleanup();
 
     return ERR_SUCCESS;
 }

@@ -104,6 +104,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
     strcpy(strrchr(png_path, '.'), ".png");
 
     int img_w, img_h, img_c;
+    stbi_set_flip_vertically_on_load(1);
     unsigned char* pixels = stbi_load(png_path, &img_w, &img_h, &img_c, 1);
     if (!pixels) {
         cJSON_Delete(root);

@@ -94,14 +94,14 @@ float px_sdf_line_gap(const PX_Font* font) {
     return font->impl.sdf.line_gap;
 }
 
+// TODO: replace with hash table for large fonts
 const struct px_sdf_glyph* px_sdf_find_glyph(const PX_Font* font, uint32_t cp) {
-    if (cp > font->impl.sdf.glyph_count)
-        return NULL;
-    struct px_sdf_glyph* g = &font->impl.sdf.glyphs[cp];
+    for (uint16_t i = 0; i < font->impl.sdf.glyph_count; i++) {
+        if (font->impl.sdf.glyphs[i].codepoint == cp)
+            return &font->impl.sdf.glyphs[i];
+    }
 
-    if (g->codepoint != cp)
-        return NULL;
-    return g;
+    return NULL;
 }
 
 GLuint px_sdf_gl_texture(const PX_Font* font) {

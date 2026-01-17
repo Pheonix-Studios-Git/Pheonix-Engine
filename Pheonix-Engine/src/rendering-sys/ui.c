@@ -51,6 +51,7 @@ struct ui_renderer {
     int text_uni_projection;
     int text_uni_texture;
     int text_uni_sdf_width;
+    int text_uni_pixel_height;
     int text_uni_outline_width;
     int text_uni_outline_color;
     int text_attr_pos;
@@ -188,12 +189,12 @@ static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px
 
     struct ui_vertex* v = gr_ui->vertices + gr_ui->vertex_count;
 
-    v[0] = (struct ui_vertex){x0, y0, g->u0, 1.0f - g->v0, c.r, c.g, c.b, c.a};
-    v[1] = (struct ui_vertex){x1, y0, g->u1, 1.0f - g->v0, c.r, c.g, c.b, c.a};
-    v[2] = (struct ui_vertex){x1, y1, g->u1, 1.0f - g->v1, c.r, c.g, c.b, c.a};
+    v[0] = (struct ui_vertex){x0, y0, g->u0, g->v0, c.r, c.g, c.b, c.a};
+    v[1] = (struct ui_vertex){x1, y0, g->u1, g->v0, c.r, c.g, c.b, c.a};
+    v[2] = (struct ui_vertex){x1, y1, g->u1, g->v1, c.r, c.g, c.b, c.a};
     v[3] = v[0];
     v[4] = v[2];
-    v[5] = (struct ui_vertex){x0, y1, g->u0, 1.0f - g->v1, c.r, c.g, c.b, c.a};
+    v[5] = (struct ui_vertex){x0, y1, g->u0, g->v1, c.r, c.g, c.b, c.a};
 
     gr_ui->vertex_count += 6;
 }
@@ -225,6 +226,7 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     gr_ui->text_uni_projection = glGetUniformLocation(gr_ui->text_program, "u_projection");
     gr_ui->text_uni_texture = glGetUniformLocation(gr_ui->text_program, "u_font_text");
     gr_ui->text_uni_sdf_width = glGetUniformLocation(gr_ui->text_program, "u_sdf_width");
+    gr_ui->text_uni_pixel_height = glGetUniformLocation(gr_ui->text_program, "u_pixel_height");
     gr_ui->text_uni_outline_width = glGetUniformLocation(gr_ui->text_program, "u_outline_width");
     gr_ui->text_uni_outline_color = glGetUniformLocation(gr_ui->text_program, "u_outline_color");
     gr_ui->text_attr_pos = glGetAttribLocation(gr_ui->text_program, "a_pos");
@@ -263,9 +265,9 @@ void px_rs_shutdown_ui(void) {
     glUseProgram(0);
 }
 
-t_err_codes px_rs_draw_panel(PX_Scale2 scale, PX_Vector2 pos, PX_Color4 color) {
+t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color) {
     gr_ui->vertex_count = 0;
-    pxgl_ui_push_quad(pos, scale, color);
+    pxgl_ui_push_quad(tran.pos, tran.scale, color);
 
     glUseProgram(gr_ui->program);
     float proj[16];
@@ -309,6 +311,21 @@ t_err_codes px_rs_draw_panel(PX_Scale2 scale, PX_Vector2 pos, PX_Color4 color) {
     return ERR_SUCCESS;
 }
 
+int px_rs_text_width(PX_Font* font, const char* text, float pixel_height) {
+    float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
+    float pen_x = 0.0f;
+
+    for (const char* p = text; *p; ) {
+        uint32_t cp = px_utf8_decode(&p);
+        const struct px_sdf_glyph* g = px_sdf_find_glyph(font, cp);
+        if (!g) continue;
+
+        pen_x += g->advance * scale;
+    }
+
+    return (int)(pen_x + 0.5f);
+}
+
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
     gr_ui->vertex_count = 0;
 
@@ -317,16 +334,21 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
     float pen_x = pos.x;
     float pen_y = pos.y + px_sdf_ascent(font) * scale;
 
-    for (const char* p = text; *p; p++) {
+    for (const char* p = text; *p;) {
         uint32_t cp = px_utf8_decode(&p);
         const struct px_sdf_glyph* g = px_sdf_find_glyph(font, cp);
         if (!g) continue;
 
+        float y1 = pen_y - g->bearing_y * scale;
+        float y0 = y1 + g->height * scale;
+        float x0 = pen_x + g->bearing_x * scale;
+        float x1 = x0 + g->width * scale;
+
         pxgl_ui_push_glyph(
-            pen_x + g->bearing_x * scale,
-            pen_y - g->bearing_y * scale,
-            pen_x + (g->bearing_x + g->width) * scale,
-            pen_y + (g->height - g->bearing_y) * scale,
+            x0,
+            y0,
+            x1,
+            y1,
             (struct px_sdf_glyph*)g,
             color
         );
@@ -344,10 +366,14 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
     );
 
     float sdf_width = px_sdf_range(font) / pixel_height;
-    sdf_width = fmaxf(0.02f, fminf(sdf_width, 0.05));
+    sdf_width = fmaxf(0.015f, fminf(sdf_width, 0.03));
     glUniform1f(
         gr_ui->text_uni_sdf_width,
         sdf_width
+    );
+    glUniform1i(
+        gr_ui->text_uni_pixel_height,
+        pixel_height
     );
 
     glUniform1f(gr_ui->text_uni_outline_width, sdf_width * 2.0f);
@@ -389,6 +415,37 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES, 0, gr_ui->vertex_count);
+
+    return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd) {
+    PX_Color4 color = dd->color; 
+    px_rs_draw_panel((PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}}, color);
+
+    int x = dd->stext_pos.x;
+    for (int i = 0; i < dd->item_count; i++) {
+        PX_DropdownItem* item = &dd->items[i];
+
+        PX_Color4 tcolor = dd->hover_index == i ? dd->hover_color : dd->text_color;
+        px_rs_render_text(item->label, dd->font_size, (PX_Vector2){x, dd->stext_pos.y}, tcolor, dd->font);
+
+        x += dd->spacing + px_rs_text_width(dd->font, item->label, dd->font_size);
+
+        if (item->is_open) {
+            px_rs_draw_panel(item->panel_tran, item->panel_color);
+
+            int y = item->stext_pos.y;
+            for (int j = 0; j < item->option_count; j++) {
+                PX_DropdownOption* option = &item->options[j];
+
+                PX_Color4 ptcolor = item->hover_index == j ? item->hover_color : item->text_color;
+                px_rs_render_text(option->label, item->font_size, (PX_Vector2){item->stext_pos.x, y}, ptcolor, dd->font);
+
+                y += item->spacing;
+            }
+        }
+    }
 
     return ERR_SUCCESS;
 }
