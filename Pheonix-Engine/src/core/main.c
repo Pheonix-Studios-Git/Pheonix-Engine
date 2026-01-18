@@ -9,6 +9,7 @@
 #include <event-sys.h>
 #include <rendering-sys.h>
 #include <font.h>
+#include <editor.h>
 
 typedef struct {
     bool valid;
@@ -47,6 +48,8 @@ static int engine_mouse_x = 0;
 static int engine_mouse_y = 0;
 // Rendering Objects
 static PX_Dropdown engine_menu_dropdown = {0};
+// Colors
+static PX_Color4 engine_ui_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -126,13 +129,15 @@ static void enginef_init_dropdowns(void) {
     engine_menu_dropdown.pos = (PX_Vector2){0, 0};
     engine_menu_dropdown.width = engine_window_main_w;
     engine_menu_dropdown.height = 30;
-    engine_menu_dropdown.color = (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF};
+    engine_menu_dropdown.color = engine_ui_black_panel_color;
     engine_menu_dropdown.hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xD4};
     engine_menu_dropdown.text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
     engine_menu_dropdown.hover_index = -1;
     engine_menu_dropdown.item_count = 4;
     engine_menu_dropdown.stext_pos = (PX_Vector2){4, 8};
     engine_menu_dropdown.spacing = 64;
+    engine_menu_dropdown.noise = 0.03f;
+    engine_menu_dropdown.cradius = 0.0f;
 
     const char* menu_labels[] = {"File", "Edit", "View", "Help"};
     const char* file_menu[] = {"New", "Open", "Save", "Save As", "Exit"};
@@ -153,16 +158,18 @@ static void enginef_init_dropdowns(void) {
         item->width = px_rs_text_width(engine_font_ui, menu_labels[i], engine_menu_dropdown.font_size);
         item->spacing = 16;
         item->font_size = 12.0f;;
-        item->panel_color = (PX_Color4){0x2B, 0x2B, 0x2B, 0xFF};
+        item->panel_color = engine_ui_black_panel_color;
         item->hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF};
-        item->text_color = (PX_Color4){0x00, 0x00, 0x00, 0xFF};
+        item->text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
         item->is_open = false;
         item->hover_index = -1;
+        item->panel_noise = 0.03f;
+        item->panel_cradius = 16.0f;
         item->panel_tran = (PX_Transform2){
             (PX_Vector2){x, 32},
-            (PX_Scale2){100, item->spacing * item->option_count}
+            (PX_Scale2){100, item->spacing * item->option_count + 16}
         };
-        item->stext_pos = (PX_Vector2){x + 2, 34};
+        item->stext_pos = (PX_Vector2){x + 6, 42};
 
         x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, item->label, engine_menu_dropdown.font_size);
 
@@ -232,6 +239,16 @@ static void enginef_event_hover_check(void) {
 }
 
 static void enginef_core_render(void) {
+    // Scene Panel
+    editor_draw_scene_panel(
+        (PX_Transform2){(PX_Vector2){0, engine_menu_dropdown.height}, (PX_Scale2){(int)(engine_window_main_w / 4), engine_window_main_h}},
+        engine_ui_black_panel_color,
+        0.03f, 0.0f,
+        engine_font_ui, 16.0f,
+        8, 32
+    );
+
+    // Dropdowns
     engine_menu_dropdown.width = engine_window_main_w;
     px_rs_draw_dropdown(&engine_menu_dropdown);
 }
@@ -311,6 +328,8 @@ int main(int argc, char** argv) {
     // Load Objects
     // Dropdowns
     enginef_init_dropdowns();
+    // Project
+    editor_new_project("Untitled");
 
     // Render
     engine_running = true;

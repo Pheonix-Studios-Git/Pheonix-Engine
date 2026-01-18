@@ -16,11 +16,15 @@ void main() {
     if (u_pixel_height < 24.0)
         edge *= 0.6;
 
-    float text_alpha = smoothstep(0.5 - edge, 0.5 + edge, sdf);
-    float outline_alpha = smoothstep(0.5 - u_outline_width, 0.5 + u_outline_width, sdf);
+    float aa = fwidth(sdf) * 0.5;
+
+    float text_alpha = smoothstep(0.5 - edge - aa, 0.5 + edge + aa, sdf);
+    float outline_alpha = smoothstep(0.5 - u_outline_width - aa, 0.5 + u_outline_width + aa, sdf);
 
     vec3 rgb = mix(u_outline_color.rgb, v_color.rgb, text_alpha);
     float alpha = max(text_alpha, outline_alpha) * v_color.a;
+
+    alpha = pow(alpha, 1.0/1.2);
 
     gl_FragColor = vec4(rgb, alpha);
 }

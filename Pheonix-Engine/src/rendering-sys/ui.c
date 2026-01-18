@@ -47,6 +47,11 @@ struct ui_renderer {
     int attr_uv;
     int attr_color;
     int uni_projection;
+    int uni_size;
+    int uni_noise;
+    int uni_corner_radius;
+    int uni_texel_size;
+    int uni_texture;
     // Text Programs
     int text_uni_projection;
     int text_uni_texture;
@@ -57,6 +62,8 @@ struct ui_renderer {
     int text_attr_pos;
     int text_attr_uv;
     int text_attr_color;
+
+    GLuint blank_tex;
 
     struct ui_vertex* vertices;
     int vertex_count;
@@ -219,6 +226,11 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
 
     // Core UI Programs
     gr_ui->uni_projection = glGetUniformLocation(gr_ui->program, "u_projection");
+    gr_ui->uni_size = glGetUniformLocation(gr_ui->program, "u_size");
+    gr_ui->uni_corner_radius = glGetUniformLocation(gr_ui->program, "u_corner_radius");
+    gr_ui->uni_noise = glGetUniformLocation(gr_ui->program, "u_noise");
+    gr_ui->uni_texel_size = glGetUniformLocation(gr_ui->program, "u_texel_size");
+    gr_ui->uni_texture = glGetUniformLocation(gr_ui->program, "u_texture");
     gr_ui->attr_pos = glGetAttribLocation(gr_ui->program, "a_pos");
     gr_ui->attr_uv = glGetAttribLocation(gr_ui->program, "a_uv");
     gr_ui->attr_color = glGetAttribLocation(gr_ui->program, "a_color");
@@ -232,6 +244,28 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     gr_ui->text_attr_pos = glGetAttribLocation(gr_ui->text_program, "a_pos");
     gr_ui->text_attr_uv = glGetAttribLocation(gr_ui->text_program, "a_uv");
     gr_ui->text_attr_color = glGetAttribLocation(gr_ui->text_program, "a_color");
+
+    // Textures Pre-made
+    unsigned int white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    glGenTextures(1, &gr_ui->blank_tex);
+    glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA,
+        1, 1,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        white_pixel
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     glGenBuffers(1, &gr_ui->vbo);
 
@@ -265,7 +299,7 @@ void px_rs_shutdown_ui(void) {
     glUseProgram(0);
 }
 
-t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color) {
+t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {
     gr_ui->vertex_count = 0;
     pxgl_ui_push_quad(tran.pos, tran.scale, color);
 
@@ -273,6 +307,15 @@ t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color) {
     float proj[16];
     pxgl_ui_ortho(0.0f, (float)gr_ui->screen_w, 0.0f, (float)gr_ui->screen_h, proj);
     glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+
+    glUniform2f(gr_ui->uni_size, tran.scale.w, tran.scale.h);
+    glUniform2f(gr_ui->uni_texel_size, 1.0f, 1.0f);
+    glUniform1f(gr_ui->uni_corner_radius, cradius);
+    glUniform1f(gr_ui->uni_noise, noise);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
+    glUniform1i(gr_ui->uni_texture, 0);
 
     glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
     glBufferData(
@@ -421,7 +464,7 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
 
 t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd) {
     PX_Color4 color = dd->color; 
-    px_rs_draw_panel((PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}}, color);
+    px_rs_draw_panel((PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}}, color, dd->noise, dd->cradius);
 
     int x = dd->stext_pos.x;
     for (int i = 0; i < dd->item_count; i++) {
@@ -433,7 +476,7 @@ t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd) {
         x += dd->spacing + px_rs_text_width(dd->font, item->label, dd->font_size);
 
         if (item->is_open) {
-            px_rs_draw_panel(item->panel_tran, item->panel_color);
+            px_rs_draw_panel(item->panel_tran, item->panel_color, item->panel_noise, item->panel_cradius);
 
             int y = item->stext_pos.y;
             for (int j = 0; j < item->option_count; j++) {
