@@ -10,6 +10,7 @@
 #include <rendering-sys.h>
 #include <font.h>
 #include <editor.h>
+#include <event.h>
 
 typedef struct {
     bool valid;
@@ -116,13 +117,6 @@ static void enginef_cleanup(void) {
     px_ws_shutdown();
 }
 
-static bool enginef_mouse_over(PX_Transform2 tran) {
-    return (bool)(engine_mouse_x >= tran.pos.x &&
-           engine_mouse_x <= tran.pos.x + tran.scale.w &&
-           engine_mouse_y >= tran.pos.y &&
-           engine_mouse_y <= tran.pos.y + tran.scale.h);
-}
-
 static void enginef_init_dropdowns(void) {
     engine_menu_dropdown.font = engine_font_ui;
     engine_menu_dropdown.font_size = 16.0f;
@@ -194,54 +188,23 @@ static void enginef_init_dropdowns(void) {
 
 static void enginef_event_mouse_click(void) {
     // Dropdowns
-    if (enginef_mouse_over((PX_Transform2){engine_menu_dropdown.pos, (PX_Scale2){engine_menu_dropdown.width, engine_menu_dropdown.height}})) {
-        int x = engine_menu_dropdown.stext_pos.x;
-        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
-            PX_DropdownItem* item = &engine_menu_dropdown.items[i];
-
-            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, engine_menu_dropdown.stext_pos.y}, (PX_Scale2){item->width, item->height}};
-            if (enginef_mouse_over(tran)) {
-                item->is_open = item->is_open ? false : true;
-            } else {
-                item->is_open = false;
-            }
-
-            x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, item->label, engine_menu_dropdown.font_size);
-        }
-    } else {
-        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
-            PX_DropdownItem* item = &engine_menu_dropdown.items[i];
-            item->is_open = false;
-        }
-    }
+    event_click_dropdown(&engine_menu_dropdown);
 }
 
 static void enginef_event_hover_check(void) {
     // Dropdowns
-    if (enginef_mouse_over((PX_Transform2){engine_menu_dropdown.pos, (PX_Scale2){engine_menu_dropdown.width, engine_menu_dropdown.height}})) {
-        bool hovered = false;
-        int x = engine_menu_dropdown.stext_pos.x;
-        for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
-            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, engine_menu_dropdown.stext_pos.y}, (PX_Scale2){engine_menu_dropdown.items[i].width, engine_menu_dropdown.items[i].height}};
-            if (enginef_mouse_over(tran)) {
-                hovered = true;
-                engine_menu_dropdown.hover_index = i;
-                break;
-            }
-
-            x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, engine_menu_dropdown.items[i].label, engine_menu_dropdown.font_size);
-        }
-        if (!hovered)
-            engine_menu_dropdown.hover_index = -1;
-    } else {
-        engine_menu_dropdown.hover_index = -1;
-    }
+    event_hover_dropdown(&engine_menu_dropdown);
 }
 
 static void enginef_core_render(void) {
+    // Core call
+    px_rs_frame_start();
+
     // Scene Panel
     editor_draw_scene_panel(
         (PX_Transform2){(PX_Vector2){0, engine_menu_dropdown.height}, (PX_Scale2){(int)(engine_window_main_w / 4), engine_window_main_h}},
+        (PX_Color4){0x0A, 0x0A, 0x0A, 0x80},
+        (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF},
         engine_ui_black_panel_color,
         0.03f, 0.0f,
         engine_font_ui, 16.0f,
@@ -315,6 +278,8 @@ int main(int argc, char** argv) {
         return last_err;
     }
 
+    event_sys_init((PX_Scale2){engine_window_main_w, engine_window_main_h}, (PX_Vector2){0});
+
     // Load Fonts
     engine_font_ui = px_font_load("assets/fonts/psdf/roboto.psdf");
     if (!engine_font_ui) {
@@ -355,10 +320,12 @@ int main(int argc, char** argv) {
                     engine_window_main.width = ev.w;
                     engine_window_main.height = ev.h;
                     px_rs_ui_resize((PX_Scale2){ev.w, ev.h});
+                    event_resize((PX_Scale2){ev.w, ev.h});
                     break;
                 case PX_WE_MOUSE_MOVE:
                     engine_mouse_x = ev.x;
                     engine_mouse_y = ev.y;
+                    event_mouse_move((PX_Vector2){ev.x, ev.y});
                     break;
                 case PX_WE_MOUSE_DOWN:
                     enginef_event_mouse_click();
@@ -367,6 +334,7 @@ int main(int argc, char** argv) {
             }
         } 
 
+        px_rs_frame_end();
         px_ws_swap_buffers(&engine_window_main);
     }
 

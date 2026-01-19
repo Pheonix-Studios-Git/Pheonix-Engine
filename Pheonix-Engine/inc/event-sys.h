@@ -1,5 +1,7 @@
 #pragma once
 
+#include <rendering-sys.h>
+
 typedef enum {
     EKeycode_Unknown = 0,
     EKeycode_MouseLButton,
@@ -115,3 +117,9 @@ typedef enum {
     EKeycode_Fullstop,
     EKeycode_Slash
 } PX_EKeycodes;
+
+void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position);
+void event_resize(PX_Scale2 main_window_scale);
+void event_mouse_move(PX_Vector2 mouse_position);
+void event_hover_dropdown(PX_Dropdown* dd);
+void event_click_dropdown(PX_Dropdown* dd);

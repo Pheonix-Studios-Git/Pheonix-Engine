@@ -11,6 +11,8 @@
 
 #include <rendering-sys/opengl.h>
 
+#define MAX_BATCHES 256
+
 struct sdf_font {
     GLuint texture;
     struct px_sdf_glyph* glyphs;
@@ -31,6 +33,33 @@ struct ui_vertex {
     unsigned char g;
     unsigned char b;
     unsigned char a;
+};
+
+enum ui_batch_type {
+    UI_BATCH_PANEL,
+    UI_BATCH_LINE,
+    UI_BATCH_TEXT
+};
+
+struct ui_batch {
+    enum ui_batch_type type;
+    int vertex_offset;
+    int vertex_count;
+    PX_Scale2 size;
+    PX_Scale2 texel_size;
+    float noise;
+    float corner_radius;
+    GLuint texture;
+    float text_sdf_width;
+    float text_pixel_height;
+    float text_outline_width;
+    PX_Color4 text_outline_color;
+};
+
+struct batch_queue {
+    struct ui_batch** batches;
+    int count;
+    int capacity;
 };
 
 struct ui_renderer {
@@ -69,12 +98,16 @@ struct ui_renderer {
     int vertex_count;
     int vertex_capacity;
 
+    struct ui_batch batches[MAX_BATCHES];
+    int batch_count;
+
     int screen_w;
     int screen_h;
 };
 
 static struct ui_renderer gr_ui_b = {0};
 static struct ui_renderer* gr_ui = &gr_ui_b;
+static struct batch_queue batch_queue = (struct batch_queue){.batches = NULL, .count = 0, .capacity = 0};
 
 static char* read_shader(const char* name) {
     char path[512];
@@ -206,6 +239,89 @@ static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px
     gr_ui->vertex_count += 6;
 }
 
+static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thickness, PX_Color4 c) {
+    if (gr_ui->vertex_count + 6 > gr_ui->vertex_capacity)
+        return;
+
+    float dx = x1 - x0;
+    float dy = y1 - y0;
+    float len = sqrtf(dx*dx + dy*dy);
+    if (len == 0.0f) return;
+
+    dx /= len;
+    dy /= len;
+
+    float px = -dy * thickness * 0.5f;
+    float py = dx * thickness * 0.5f;
+
+    float vx0 = x0 + px;
+    float vy0 = y0 + py;
+    float vx1 = x1 + px;
+    float vy1 = y1 + py;
+    float vx2 = x1 - px;
+    float vy2 = y1 - py;
+    float vx3 = x0 - px;
+    float vy3 = y0 - py;
+
+    struct ui_vertex* v = gr_ui->vertices + gr_ui->vertex_count;
+
+    v[0] = (struct ui_vertex){vx0, vy0, 0, 0, c.r, c.g, c.b, c.a};
+    v[1] = (struct ui_vertex){vx1, vy1, 0, 0, c.r, c.g, c.b, c.a};
+    v[2] = (struct ui_vertex){vx2, vy2, 0, 0, c.r, c.g, c.b, c.a};
+    v[3] = v[0];
+    v[4] = v[2];
+    v[5] = (struct ui_vertex){vx3, vy3, 0, 0, c.r, c.g, c.b, c.a};
+
+    gr_ui->vertex_count += 6;
+}
+
+static void push_batch(struct ui_batch* b) {
+    if (gr_ui->batch_count == MAX_BATCHES) {
+        struct ui_batch* batch = (struct ui_batch*)malloc(sizeof(struct ui_batch));
+        if (!batch)
+            return; // Can't do anything, sorry!
+        memcpy(batch, b, sizeof(struct ui_batch));
+        struct batch_queue* bq = &batch_queue;
+        if (bq->count >= bq->capacity) {
+            int new_cap = bq->capacity ? bq->capacity * 2 : 8;
+            struct ui_batch** new_ptr = realloc(bq->batches, sizeof(struct ui_batch*) * new_cap);
+            if (!new_ptr) {
+                free(batch);
+                return;
+            }
+            bq->batches = new_ptr;
+            bq->capacity = new_cap;
+        }
+        bq->batches[bq->count] = batch;
+        bq->count++;
+    } else {
+        memcpy(&gr_ui->batches[gr_ui->batch_count], b, sizeof(struct ui_batch));
+        gr_ui->batch_count++;
+    }
+}
+
+static void flush_batch_queue(void) {
+    struct batch_queue* bq = &batch_queue;
+    for (int i = 0; i < bq->count; i++) {
+        if (gr_ui->batch_count < MAX_BATCHES) {
+            memcpy(&gr_ui->batches[gr_ui->batch_count], bq->batches[i], sizeof(struct ui_batch));
+            gr_ui->batch_count++;
+            free(bq->batches[i]);
+            bq->batches[i] = NULL;
+        } else {
+            break; // still overflowing; keep in queue
+        }
+    }
+
+    int shift = 0;
+    for (int i = 0; i < bq->count; i++) {
+        if (bq->batches[i]) {
+            bq->batches[shift++] = bq->batches[i];
+        }
+    }
+    bq->count = shift;
+}
+
 t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     GLenum err = glewInit();
     if (err != GLEW_OK) {
@@ -299,23 +415,16 @@ void px_rs_shutdown_ui(void) {
     glUseProgram(0);
 }
 
-t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {
+void px_rs_frame_start(void) {
     gr_ui->vertex_count = 0;
-    pxgl_ui_push_quad(tran.pos, tran.scale, color);
+    gr_ui->batch_count = 0;
 
-    glUseProgram(gr_ui->program);
-    float proj[16];
-    pxgl_ui_ortho(0.0f, (float)gr_ui->screen_w, 0.0f, (float)gr_ui->screen_h, proj);
-    glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+    if ((&batch_queue)->count > 0) flush_batch_queue();
+}
 
-    glUniform2f(gr_ui->uni_size, tran.scale.w, tran.scale.h);
-    glUniform2f(gr_ui->uni_texel_size, 1.0f, 1.0f);
-    glUniform1f(gr_ui->uni_corner_radius, cradius);
-    glUniform1f(gr_ui->uni_noise, noise);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
-    glUniform1i(gr_ui->uni_texture, 0);
+void px_rs_frame_end(void) {
+    if (gr_ui->vertex_count <= 0)
+        return;
 
     glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
     glBufferData(
@@ -325,31 +434,116 @@ t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, f
         GL_DYNAMIC_DRAW
     );
 
-    glEnableVertexAttribArray(gr_ui->attr_pos);
-    glEnableVertexAttribArray(gr_ui->attr_uv);
-    glEnableVertexAttribArray(gr_ui->attr_color);
+    float proj[16];
+    pxgl_ui_ortho(0.0f, (float)gr_ui->screen_w, 0.0f, (float)gr_ui->screen_h, proj);
 
-    glVertexAttribPointer(
-        gr_ui->attr_pos, 2, GL_FLOAT, GL_FALSE,
-        sizeof(struct ui_vertex), (void*)0
-    );
+    for (int i = 0; i < gr_ui->batch_count; i++) {
+        struct ui_batch* b = &gr_ui->batches[i];
 
-    glVertexAttribPointer(
-        gr_ui->attr_uv, 2, GL_FLOAT, GL_FALSE,
-        sizeof(struct ui_vertex), (void*)(sizeof(float) * 2)
-    );
-    
-    glVertexAttribPointer(
-        gr_ui->attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE,
-        sizeof(struct ui_vertex), (void*)(sizeof(float) * 4)
-    );
+        if (b->type == UI_BATCH_PANEL) {
+            glUseProgram(gr_ui->program);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDrawArrays(GL_TRIANGLES, 0, gr_ui->vertex_count);
-    glDisableVertexAttribArray(gr_ui->attr_pos);
-    glDisableVertexAttribArray(gr_ui->attr_uv);
-    glDisableVertexAttribArray(gr_ui->attr_color);
+            glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+            glUniform2f(gr_ui->uni_size, b->size.w, b->size.h);
+            glUniform2f(gr_ui->uni_texel_size, b->texel_size.w, b->texel_size.h);
+            glUniform1f(gr_ui->uni_corner_radius, b->corner_radius);
+            glUniform1f(gr_ui->uni_noise, b->noise);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, b->texture);
+            glUniform1i(gr_ui->uni_texture, 0);
+
+            glEnableVertexAttribArray(gr_ui->attr_pos);
+            glEnableVertexAttribArray(gr_ui->attr_uv);
+            glEnableVertexAttribArray(gr_ui->attr_color);
+
+            glVertexAttribPointer(gr_ui->attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
+            glVertexAttribPointer(gr_ui->attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 2));
+            glVertexAttribPointer(gr_ui->attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 4));
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
+
+            glDisableVertexAttribArray(gr_ui->attr_pos);
+            glDisableVertexAttribArray(gr_ui->attr_uv);
+            glDisableVertexAttribArray(gr_ui->attr_color);
+        } else if (b->type == UI_BATCH_TEXT) {
+            glUseProgram(gr_ui->text_program);
+
+            glUniformMatrix4fv(gr_ui->text_uni_projection, 1, GL_FALSE, proj);
+            glUniform1f(gr_ui->text_uni_sdf_width, b->text_sdf_width);
+            glUniform1f(gr_ui->text_uni_pixel_height, b->text_pixel_height);
+            glUniform1f(gr_ui->text_uni_outline_width, b->text_outline_width);
+            glUniform4f(gr_ui->text_uni_outline_color, (float)b->text_outline_color.r, (float)b->text_outline_color.g, (float)b->text_outline_color.b, (float)b->text_outline_color.a);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, b->texture);
+            glUniform1i(gr_ui->text_uni_texture, 0);
+
+            glEnableVertexAttribArray(gr_ui->text_attr_pos);
+            glEnableVertexAttribArray(gr_ui->text_attr_uv);
+            glEnableVertexAttribArray(gr_ui->text_attr_color);
+
+            glVertexAttribPointer(gr_ui->text_attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
+            glVertexAttribPointer(gr_ui->text_attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 2));
+            glVertexAttribPointer(gr_ui->text_attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 4));
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
+
+            glDisableVertexAttribArray(gr_ui->text_attr_pos);
+            glDisableVertexAttribArray(gr_ui->text_attr_uv);
+            glDisableVertexAttribArray(gr_ui->text_attr_color);
+        } else if (b->type == UI_BATCH_LINE) {
+            glUseProgram(gr_ui->program);
+
+            glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+            glUniform2f(gr_ui->uni_size, 0, 0);
+            glUniform2f(gr_ui->uni_texel_size, 1, 1);
+            glUniform1f(gr_ui->uni_corner_radius, 0.0f);
+            glUniform1f(gr_ui->uni_noise, 0.0f);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, b->texture);
+            glUniform1i(gr_ui->uni_texture, 0);
+
+            glEnableVertexAttribArray(gr_ui->attr_pos);
+            glEnableVertexAttribArray(gr_ui->attr_uv);
+            glEnableVertexAttribArray(gr_ui->attr_color);
+
+            glVertexAttribPointer(gr_ui->attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
+            glVertexAttribPointer(gr_ui->attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + 8));
+            glVertexAttribPointer(gr_ui->attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + 16));
+
+            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
+
+            glDisableVertexAttribArray(gr_ui->attr_pos);
+            glDisableVertexAttribArray(gr_ui->attr_uv);
+            glDisableVertexAttribArray(gr_ui->attr_color);
+        }
+    }
+}
+
+t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {
+    int start_vertex = gr_ui->vertex_count;
+    pxgl_ui_push_quad(tran.pos, tran.scale, color);
+    int vertex_count = gr_ui->vertex_count - start_vertex;
+
+    struct ui_batch b = {0};
+    b.type = UI_BATCH_PANEL;
+    b.size = tran.scale;
+    b.texel_size = (PX_Scale2){1, 1};
+    b.corner_radius = cradius;
+    b.noise = noise;
+    b.texture = gr_ui->blank_tex;
+    b.vertex_count = vertex_count;
+    b.vertex_offset = start_vertex;
+
+    push_batch(&b);
 
     return ERR_SUCCESS;
 }
@@ -370,8 +564,7 @@ int px_rs_text_width(PX_Font* font, const char* text, float pixel_height) {
 }
 
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
-    gr_ui->vertex_count = 0;
-
+    int start_vertex = gr_ui->vertex_count;
     float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
 
     float pen_x = pos.x;
@@ -398,67 +591,42 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
 
         pen_x += g->advance * scale;
     }
-
-    glUseProgram(gr_ui->text_program);
-
-    float proj[16];
-    pxgl_ui_ortho(0.0f, gr_ui->screen_w, 0.0f, gr_ui->screen_h, proj);
-    glUniformMatrix4fv(
-        gr_ui->text_uni_projection,
-        1, GL_FALSE, proj
-    );
+    int vertex_count = gr_ui->vertex_count - start_vertex;
 
     float sdf_width = px_sdf_range(font) / pixel_height;
     sdf_width = fmaxf(0.015f, fminf(sdf_width, 0.03));
-    glUniform1f(
-        gr_ui->text_uni_sdf_width,
-        sdf_width
-    );
-    glUniform1i(
-        gr_ui->text_uni_pixel_height,
-        pixel_height
-    );
 
-    glUniform1f(gr_ui->text_uni_outline_width, sdf_width * 2.0f);
+    struct ui_batch b = {0};
+    b.type = UI_BATCH_TEXT;
+    b.text_sdf_width = sdf_width;
+    b.text_pixel_height = pixel_height;
+    b.text_outline_width = sdf_width * 2.0f;
+    b.text_outline_color = (PX_Color4){0x00, 0x00, 0x00, 0xFF};
+    b.texture = px_sdf_gl_texture(font);
+    b.vertex_count = vertex_count;
+    b.vertex_offset = start_vertex;
 
-    glUniform4f(
-        gr_ui->text_uni_outline_color,
-        0.0f, 0.0f, 0.0f, 1.0f
-    );
+    push_batch(&b);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, px_sdf_gl_texture(font));
-    glUniform1i(gr_ui->text_uni_texture, 0);
+    return ERR_SUCCESS;
+}
 
-    glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(struct ui_vertex) * gr_ui->vertex_count,
-        gr_ui->vertices,
-        GL_DYNAMIC_DRAW
-    );
+t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color) {
+    int start_vertex = gr_ui->vertex_count;
+    pxgl_ui_push_line(start.x, start.y, end.x, end.y, thickness, color);
+    int vertex_count = gr_ui->vertex_count - start_vertex;
 
-    glEnableVertexAttribArray(gr_ui->text_attr_pos);
-    glEnableVertexAttribArray(gr_ui->text_attr_uv);
-    glEnableVertexAttribArray(gr_ui->text_attr_color);
+    struct ui_batch b = {0};
+    b.type = UI_BATCH_LINE;
+    b.size = (PX_Scale2){0,0};
+    b.texel_size = (PX_Scale2){1,1};
+    b.texture = gr_ui->blank_tex;
+    b.noise = 0.0f;
+    b.corner_radius = 0.0f;
+    b.vertex_offset = start_vertex;
+    b.vertex_count = vertex_count;
 
-    glVertexAttribPointer(
-        gr_ui->text_attr_pos, 2, GL_FLOAT, GL_FALSE,
-        sizeof(struct ui_vertex), (void*)0
-    );
-    glVertexAttribPointer(
-        gr_ui->text_attr_uv, 2, GL_FLOAT, GL_FALSE,
-        sizeof(struct ui_vertex), (void*)(sizeof(float) * 2)
-    );
-    glVertexAttribPointer(
-        gr_ui->text_attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE,
-        sizeof(struct ui_vertex), (void*)(sizeof(float) * 4)
-    );
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDrawArrays(GL_TRIANGLES, 0, gr_ui->vertex_count);
-
+    push_batch(&b);
     return ERR_SUCCESS;
 }
 

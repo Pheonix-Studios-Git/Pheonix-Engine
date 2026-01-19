@@ -90,4 +90,4 @@ typedef struct {
 t_err_codes editor_new_project(char* proj_name);
 PX_EditorState* editor_get_state(void);
 bool editor_add_object(PX_EditorObject* parent, PX_EditorObject* obj);
-void editor_draw_scene_panel(PX_Transform2 transform, PX_Color4 color, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
+void editor_draw_scene_panel(PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
