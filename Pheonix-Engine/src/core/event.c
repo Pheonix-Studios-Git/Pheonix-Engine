@@ -6,8 +6,12 @@
 #include <window-sys.h>
 #include <rendering-sys.h>
 
+#define MAX_GLOBAL_SIGNALS 64
+
 static PX_Scale2 mwindow_s = {0};
 static PX_Vector2 mouse_pos = {0};
+static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
+static int gsignals_count = 0;
 
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
     mwindow_s = main_window_scale;
@@ -88,6 +92,24 @@ void event_click_dropdown(PX_Dropdown* dd) {
         }
     }
 
+    if (open_index > -1) {
+        PX_DropdownItem* opened_panel = &dd->items[open_index];
+        int y = opened_panel->stext_pos.y;
+
+        for (int j = 0; j < opened_panel->option_count; j++) {
+            PX_DropdownOption* op = &opened_panel->options[j];
+            PX_Transform2 op_tran = (PX_Transform2){(PX_Vector2){opened_panel->stext_pos.x, y}, (PX_Scale2){op->width, op->height}};
+            if (is_mouse_on(op_tran)) {
+                PX_Event_GSignal signal = {0};
+                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){open_index, j};
+                event_send_gsignal(EVENT_GSIGNAL_UI_DROPDOWN_CLICK, &signal);
+                opened_panel->is_open = false;
+                return;
+            }
+            y += opened_panel->spacing;
+        }
+    }
+
     PX_Scale2 dd_scale = (PX_Scale2){dd->width, dd->height};
     PX_Transform2 dd_tran = (PX_Transform2){dd->pos, dd_scale};
 
@@ -116,3 +138,14 @@ void event_click_dropdown(PX_Dropdown* dd) {
     if (open_index > -1) (&dd->items[open_index])->is_open = false;
 }
 
+void event_send_gsignal(PX_Event_GSignals type, PX_Event_GSignal* signal) {
+    if (!signal || type == EVENT_GSIGNAL_UNKNOWN || gsignals_count >= MAX_GLOBAL_SIGNALS) return;
+    memcpy(&gsignal_queue[gsignals_count], signal, sizeof(PX_Event_GSignal));
+    gsignals_count++;
+}
+
+void event_pop_gsignal(void, PX_Event_GSignal* out) {
+    if (gsignals_count < 1 || gsignals_count > MAX_GLOBAL_SIGNALS) return NULL;
+    gsignals_count--;
+    memcpy(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
+}

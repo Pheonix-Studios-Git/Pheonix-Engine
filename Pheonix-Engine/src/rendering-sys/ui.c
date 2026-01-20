@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -12,6 +13,7 @@
 #include <rendering-sys/opengl.h>
 
 #define MAX_BATCHES 256
+#define MAX_VERTEX_COUNT 8192
 
 struct sdf_font {
     GLuint texture;
@@ -56,12 +58,6 @@ struct ui_batch {
     PX_Color4 text_outline_color;
 };
 
-struct batch_queue {
-    struct ui_batch** batches;
-    int count;
-    int capacity;
-};
-
 struct ui_renderer {
     int initialized;
 
@@ -70,6 +66,7 @@ struct ui_renderer {
 
     unsigned int vbo;
     unsigned int vao;
+    unsigned int ebo;
     
     // Core UI Programs
     int attr_pos;
@@ -107,7 +104,6 @@ struct ui_renderer {
 
 static struct ui_renderer gr_ui_b = {0};
 static struct ui_renderer* gr_ui = &gr_ui_b;
-static struct batch_queue batch_queue = (struct batch_queue){.batches = NULL, .count = 0, .capacity = 0};
 
 static char* read_shader(const char* name) {
     char path[512];
@@ -216,11 +212,9 @@ static void pxgl_ui_push_quad(PX_Vector2 pos, PX_Scale2 scale, PX_Color4 c) {
     v[0] = (struct ui_vertex){(float)pos.x, (float)pos.y, 0, 0, c.r, c.g, c.b, c.a};
     v[1] = (struct ui_vertex){x2, (float)pos.y, 1, 0, c.r, c.g, c.b, c.a};
     v[2] = (struct ui_vertex){x2, y2, 1, 1, c.r, c.g, c.b, c.a};
-    v[3] = (struct ui_vertex){(float)pos.x, (float)pos.y, 0, 0, c.r, c.g, c.b, c.a};
-    v[4] = (struct ui_vertex){x2, y2, 1, 1, c.r, c.g, c.b, c.a};
-    v[5] = (struct ui_vertex){(float)pos.x, y2, 0, 1, c.r, c.g, c.b, c.a};
+    v[3] = (struct ui_vertex){(float)pos.x, y2, 0, 1, c.r, c.g, c.b, c.a};
  
-    gr_ui->vertex_count += 6;
+    gr_ui->vertex_count += 4;
 }
 
 static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
@@ -232,11 +226,9 @@ static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px
     v[0] = (struct ui_vertex){x0, y0, g->u0, g->v0, c.r, c.g, c.b, c.a};
     v[1] = (struct ui_vertex){x1, y0, g->u1, g->v0, c.r, c.g, c.b, c.a};
     v[2] = (struct ui_vertex){x1, y1, g->u1, g->v1, c.r, c.g, c.b, c.a};
-    v[3] = v[0];
-    v[4] = v[2];
-    v[5] = (struct ui_vertex){x0, y1, g->u0, g->v1, c.r, c.g, c.b, c.a};
+    v[3] = (struct ui_vertex){x0, y1, g->u0, g->v1, c.r, c.g, c.b, c.a};
 
-    gr_ui->vertex_count += 6;
+    gr_ui->vertex_count += 4;
 }
 
 static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thickness, PX_Color4 c) {
@@ -248,78 +240,46 @@ static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thic
     float len = sqrtf(dx*dx + dy*dy);
     if (len == 0.0f) return;
 
-    dx /= len;
-    dy /= len;
-
+    dx /= len; dy /= len;
     float px = -dy * thickness * 0.5f;
-    float py = dx * thickness * 0.5f;
-
-    float vx0 = x0 + px;
-    float vy0 = y0 + py;
-    float vx1 = x1 + px;
-    float vy1 = y1 + py;
-    float vx2 = x1 - px;
-    float vy2 = y1 - py;
-    float vx3 = x0 - px;
-    float vy3 = y0 - py;
+    float py =  dx * thickness * 0.5f;
 
     struct ui_vertex* v = gr_ui->vertices + gr_ui->vertex_count;
+    v[0] = (struct ui_vertex){x0 + px, y0 + py, 0, 0, c.r, c.g, c.b, c.a};
+    v[1] = (struct ui_vertex){x1 + px, y1 + py, 1, 0, c.r, c.g, c.b, c.a};
+    v[2] = (struct ui_vertex){x1 - px, y1 - py, 1, 1, c.r, c.g, c.b, c.a};
+    v[3] = (struct ui_vertex){x0 - px, y0 - py, 0, 1, c.r, c.g, c.b, c.a};
 
-    v[0] = (struct ui_vertex){vx0, vy0, 0, 0, c.r, c.g, c.b, c.a};
-    v[1] = (struct ui_vertex){vx1, vy1, 0, 0, c.r, c.g, c.b, c.a};
-    v[2] = (struct ui_vertex){vx2, vy2, 0, 0, c.r, c.g, c.b, c.a};
-    v[3] = v[0];
-    v[4] = v[2];
-    v[5] = (struct ui_vertex){vx3, vy3, 0, 0, c.r, c.g, c.b, c.a};
-
-    gr_ui->vertex_count += 6;
+    gr_ui->vertex_count += 4;
 }
 
 static void push_batch(struct ui_batch* b) {
-    if (gr_ui->batch_count == MAX_BATCHES) {
-        struct ui_batch* batch = (struct ui_batch*)malloc(sizeof(struct ui_batch));
-        if (!batch)
-            return; // Can't do anything, sorry!
-        memcpy(batch, b, sizeof(struct ui_batch));
-        struct batch_queue* bq = &batch_queue;
-        if (bq->count >= bq->capacity) {
-            int new_cap = bq->capacity ? bq->capacity * 2 : 8;
-            struct ui_batch** new_ptr = realloc(bq->batches, sizeof(struct ui_batch*) * new_cap);
-            if (!new_ptr) {
-                free(batch);
-                return;
+    if (gr_ui->batch_count > 0) {
+        struct ui_batch* last_b = &gr_ui->batches[gr_ui->batch_count - 1];
+
+        if (last_b->type == b->type && last_b->texture == b->texture) {
+            if (b->type == UI_BATCH_PANEL) {
+                if (b->corner_radius == last_b->corner_radius && b->noise == last_b->noise) {
+                    last_b->vertex_count += b->vertex_count;
+                    return;
+                }
+            } else if (b->type == UI_BATCH_TEXT) {
+                if (b->text_sdf_width == last_b->text_sdf_width && b->text_outline_width == last_b->text_outline_width &&
+                    (b->text_outline_color.r == last_b->text_outline_color.r &&
+                    b->text_outline_color.g == last_b->text_outline_color.g &&
+                    b->text_outline_color.b == last_b->text_outline_color.b &&
+                    b->text_outline_color.a == last_b->text_outline_color.a)
+                ){
+                    last_b->vertex_count += b->vertex_count;
+                    return;
+                }
             }
-            bq->batches = new_ptr;
-            bq->capacity = new_cap;
-        }
-        bq->batches[bq->count] = batch;
-        bq->count++;
-    } else {
-        memcpy(&gr_ui->batches[gr_ui->batch_count], b, sizeof(struct ui_batch));
-        gr_ui->batch_count++;
-    }
-}
-
-static void flush_batch_queue(void) {
-    struct batch_queue* bq = &batch_queue;
-    for (int i = 0; i < bq->count; i++) {
-        if (gr_ui->batch_count < MAX_BATCHES) {
-            memcpy(&gr_ui->batches[gr_ui->batch_count], bq->batches[i], sizeof(struct ui_batch));
-            gr_ui->batch_count++;
-            free(bq->batches[i]);
-            bq->batches[i] = NULL;
-        } else {
-            break; // still overflowing; keep in queue
         }
     }
 
-    int shift = 0;
-    for (int i = 0; i < bq->count; i++) {
-        if (bq->batches[i]) {
-            bq->batches[shift++] = bq->batches[i];
-        }
+    if (gr_ui->batch_count < MAX_BATCHES) {
+        memcpy(&gr_ui->batches[gr_ui->batch_count++], b, sizeof(struct ui_batch));
     }
-    bq->count = shift;
 }
 
 t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
@@ -383,9 +343,22 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    glGenVertexArrays(1, &gr_ui->vao);
     glGenBuffers(1, &gr_ui->vbo);
+    glGenBuffers(1, &gr_ui->ebo);
 
-    gr_ui->vertex_capacity = 8192;
+    glBindVertexArray(gr_ui->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_ui->ebo);
+
+    unsigned short indices[MAX_VERTEX_COUNT / 4 * 6];
+    for (int i = 0, v = 0; i < (MAX_VERTEX_COUNT / 4 * 6); i += 6, v += 4) {
+        indices[i + 0] = v + 0; indices[i + 1] = v + 1; indices[i + 2] = v + 2;
+        indices[i + 3] = v + 2; indices[i + 4] = v + 3; indices[i + 5] = v + 0;
+    }
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    gr_ui->vertex_capacity = MAX_VERTEX_COUNT;
     gr_ui->vertices = (struct ui_vertex*)malloc(sizeof(struct ui_vertex) * gr_ui->vertex_capacity);
     if (!gr_ui->vertices) {
         return ERR_ALLOC_FAILED;
@@ -418,8 +391,6 @@ void px_rs_shutdown_ui(void) {
 void px_rs_frame_start(void) {
     gr_ui->vertex_count = 0;
     gr_ui->batch_count = 0;
-
-    if ((&batch_queue)->count > 0) flush_batch_queue();
 }
 
 void px_rs_frame_end(void) {
@@ -437,12 +408,27 @@ void px_rs_frame_end(void) {
     float proj[16];
     pxgl_ui_ortho(0.0f, (float)gr_ui->screen_w, 0.0f, (float)gr_ui->screen_h, proj);
 
+    glBindVertexArray(gr_ui->vao);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_ui->ebo);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     for (int i = 0; i < gr_ui->batch_count; i++) {
         struct ui_batch* b = &gr_ui->batches[i];
+        if (b->vertex_count <= 0) continue;
+
+        unsigned int program = 0;
+        int attr_pos = 0;
+        int attr_uv = 0;
+        int attr_color = 0;
+
+        if (b->type == UI_BATCH_TEXT)
+            program = gr_ui->text_program;
+        else
+            program = gr_ui->program;
+        glUseProgram(program);
 
         if (b->type == UI_BATCH_PANEL) {
-            glUseProgram(gr_ui->program);
-
             glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
             glUniform2f(gr_ui->uni_size, b->size.w, b->size.h);
             glUniform2f(gr_ui->uni_texel_size, b->texel_size.w, b->texel_size.h);
@@ -453,25 +439,10 @@ void px_rs_frame_end(void) {
             glBindTexture(GL_TEXTURE_2D, b->texture);
             glUniform1i(gr_ui->uni_texture, 0);
 
-            glEnableVertexAttribArray(gr_ui->attr_pos);
-            glEnableVertexAttribArray(gr_ui->attr_uv);
-            glEnableVertexAttribArray(gr_ui->attr_color);
-
-            glVertexAttribPointer(gr_ui->attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
-            glVertexAttribPointer(gr_ui->attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 2));
-            glVertexAttribPointer(gr_ui->attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 4));
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
-
-            glDisableVertexAttribArray(gr_ui->attr_pos);
-            glDisableVertexAttribArray(gr_ui->attr_uv);
-            glDisableVertexAttribArray(gr_ui->attr_color);
+            attr_pos = gr_ui->attr_pos;
+            attr_uv = gr_ui->attr_uv;
+            attr_color = gr_ui->attr_color;
         } else if (b->type == UI_BATCH_TEXT) {
-            glUseProgram(gr_ui->text_program);
-
             glUniformMatrix4fv(gr_ui->text_uni_projection, 1, GL_FALSE, proj);
             glUniform1f(gr_ui->text_uni_sdf_width, b->text_sdf_width);
             glUniform1f(gr_ui->text_uni_pixel_height, b->text_pixel_height);
@@ -482,25 +453,10 @@ void px_rs_frame_end(void) {
             glBindTexture(GL_TEXTURE_2D, b->texture);
             glUniform1i(gr_ui->text_uni_texture, 0);
 
-            glEnableVertexAttribArray(gr_ui->text_attr_pos);
-            glEnableVertexAttribArray(gr_ui->text_attr_uv);
-            glEnableVertexAttribArray(gr_ui->text_attr_color);
-
-            glVertexAttribPointer(gr_ui->text_attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
-            glVertexAttribPointer(gr_ui->text_attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 2));
-            glVertexAttribPointer(gr_ui->text_attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + sizeof(float) * 4));
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
-
-            glDisableVertexAttribArray(gr_ui->text_attr_pos);
-            glDisableVertexAttribArray(gr_ui->text_attr_uv);
-            glDisableVertexAttribArray(gr_ui->text_attr_color);
+            attr_pos = gr_ui->text_attr_pos;
+            attr_uv = gr_ui->text_attr_uv;
+            attr_color = gr_ui->text_attr_color;
         } else if (b->type == UI_BATCH_LINE) {
-            glUseProgram(gr_ui->program);
-
             glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
             glUniform2f(gr_ui->uni_size, 0, 0);
             glUniform2f(gr_ui->uni_texel_size, 1, 1);
@@ -511,21 +467,31 @@ void px_rs_frame_end(void) {
             glBindTexture(GL_TEXTURE_2D, b->texture);
             glUniform1i(gr_ui->uni_texture, 0);
 
-            glEnableVertexAttribArray(gr_ui->attr_pos);
-            glEnableVertexAttribArray(gr_ui->attr_uv);
-            glEnableVertexAttribArray(gr_ui->attr_color);
-
-            glVertexAttribPointer(gr_ui->attr_pos, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex)));
-            glVertexAttribPointer(gr_ui->attr_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + 8));
-            glVertexAttribPointer(gr_ui->attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct ui_vertex), (void*)(b->vertex_offset * sizeof(struct ui_vertex) + 16));
-
-            glDrawArrays(GL_TRIANGLES, b->vertex_offset, b->vertex_count);
-
-            glDisableVertexAttribArray(gr_ui->attr_pos);
-            glDisableVertexAttribArray(gr_ui->attr_uv);
-            glDisableVertexAttribArray(gr_ui->attr_color);
+            attr_pos = gr_ui->attr_pos;
+            attr_uv = gr_ui->attr_uv;
+            attr_color = gr_ui->attr_color;
         }
+
+        uintptr_t base_offset = (uintptr_t)b->vertex_offset * sizeof(struct ui_vertex);
+        int stride = sizeof(struct ui_vertex);
+
+        glEnableVertexAttribArray(attr_pos);
+        glEnableVertexAttribArray(attr_uv);
+        glEnableVertexAttribArray(attr_color);
+
+        glVertexAttribPointer(attr_pos, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct ui_vertex, x)));
+        glVertexAttribPointer(attr_uv, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct ui_vertex, u)));
+        glVertexAttribPointer(attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(base_offset + offsetof(struct ui_vertex, r)));
+
+        int index_count = (b->vertex_count / 4) * 6;
+        glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_SHORT, (void*)0);
+
+        glDisableVertexAttribArray(attr_pos);
+        glDisableVertexAttribArray(attr_uv);
+        glDisableVertexAttribArray(attr_color);
     }
+
+    glBindVertexArray(0);
 }
 
 t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {

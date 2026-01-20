@@ -151,7 +151,7 @@ static void enginef_init_dropdowns(void) {
         item->height = 16;
         item->width = px_rs_text_width(engine_font_ui, menu_labels[i], engine_menu_dropdown.font_size);
         item->spacing = 16;
-        item->font_size = 12.0f;;
+        item->font_size = 14.0f;;
         item->panel_color = engine_ui_black_panel_color;
         item->hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF};
         item->text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};

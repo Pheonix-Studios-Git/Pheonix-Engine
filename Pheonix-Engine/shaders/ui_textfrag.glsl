@@ -12,11 +12,16 @@ varying vec4 v_color;
 void main() {
     float sdf = texture2D(u_font_text, v_uv).r;
 
-    float edge = u_sdf_width;
-    if (u_pixel_height < 24.0)
-        edge *= 0.6;
+    float edge_adjustment = 0.0;
+    float aa_min = 0.01;
 
-    float aa = fwidth(sdf) * 0.5;
+    if (u_pixel_height < 16.0) {
+        edge_adjustment = 0.05;
+        aa_min = 0.03;
+    }
+    
+    float edge = u_sdf_width * edge_adjustment;
+    float aa = max(fwidth(sdf) * 0.5, aa_min);
 
     float text_alpha = smoothstep(0.5 - edge - aa, 0.5 + edge + aa, sdf);
     float outline_alpha = smoothstep(0.5 - u_outline_width - aa, 0.5 + u_outline_width + aa, sdf);
