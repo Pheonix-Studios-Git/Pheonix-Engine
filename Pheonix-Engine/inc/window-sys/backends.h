@@ -37,7 +37,7 @@ typedef struct px_ws_backend {
 
     t_err_codes (*poll_events)(PX_Window*);
 
-    t_err_codes (*show_splash)(PX_Window*);
+    t_err_codes (*show_splash)(void);
     t_err_codes (*window_design)(PX_Window*, PX_WindowDesign*);
     
     t_err_codes (*create_ctx)(PX_Window*);

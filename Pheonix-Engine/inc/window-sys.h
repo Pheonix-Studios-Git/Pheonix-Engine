@@ -63,7 +63,7 @@ void px_ws_destroy(PX_Window* win);
 t_err_codes px_ws_poll(PX_Window* win);
 bool px_ws_pop_event(PX_Window* win, PX_WEvent* out);
 
-t_err_codes px_ws_show_splash(PX_Window* win);
+t_err_codes px_ws_show_splash(void);
 t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design);
 
 t_err_codes px_ws_create_ctx(PX_Window* win);

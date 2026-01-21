@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <err-codes.h>
 #include <event-sys.h>
@@ -144,8 +145,13 @@ void event_send_gsignal(PX_Event_GSignals type, PX_Event_GSignal* signal) {
     gsignals_count++;
 }
 
-void event_pop_gsignal(void, PX_Event_GSignal* out) {
-    if (gsignals_count < 1 || gsignals_count > MAX_GLOBAL_SIGNALS) return NULL;
+void event_pop_gsignal(PX_Event_GSignal* out) {
+    if (gsignals_count < 1 || gsignals_count > MAX_GLOBAL_SIGNALS) {
+        PX_Event_GSignal zeroed = {0};
+        memcpy(out, &zeroed, sizeof(PX_Event_GSignal));
+        return;
+    }
     gsignals_count--;
     memcpy(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
 }
+

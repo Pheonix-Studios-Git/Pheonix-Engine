@@ -250,6 +250,14 @@ int main(int argc, char** argv) {
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize window system!\n");
         return last_err;
+    } 
+
+    last_err = px_ws_show_splash();
+    if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to display splash screen!\n");
+        px_ws_destroy(&engine_window_main);
+        px_ws_shutdown();
+        return last_err;
     }
 
     last_err = px_ws_create(&engine_window_main);
@@ -260,14 +268,6 @@ int main(int argc, char** argv) {
     }
 
     px_ws_window_design(&engine_window_main, &engine_window_main_design);
-
-    last_err = px_ws_show_splash(&engine_window_main);
-    if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to display splash screen!\n");
-        px_ws_destroy(&engine_window_main);
-        px_ws_shutdown();
-        return last_err;
-    }
     
     px_ws_create_ctx(&engine_window_main);
     last_err = px_rs_init_ui((PX_Scale2){engine_window_main_w, engine_window_main_h});

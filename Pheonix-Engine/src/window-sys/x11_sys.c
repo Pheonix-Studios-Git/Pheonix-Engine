@@ -1,18 +1,25 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <time.h>
 
 #include <window-sys.h>
 #include <window-sys/backends.h>
 #include <err-codes.h>
 #include <event-sys.h>
+#include <core/image.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
+#include <X11/extensions/Xrender.h>
 
 #include <rendering-sys/opengl.h>
 
@@ -473,24 +480,185 @@ static t_err_codes x11_poll_events(PX_Window* win) {
     return ERR_SUCCESS;
 }
 
-static t_err_codes x11_engine_splash(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
-    struct window* iwin = get_window(win->handle);
-    if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
+static t_err_codes x11_engine_splash(void) {
+    int logo_w, logo_h;
+    int logo_bit_depth;
+    int logo_color_type;
 
-    XMapWindow(iwin->display, iwin->window);
-    XEvent ev;
-    do {
-        XNextEvent(iwin->display, &ev);
-    } while (ev.type != Expose);
+    unsigned char* logo_data;
+    t_err_codes err = image_get_png("assets/icons/logo.png", &logo_w, &logo_h, &logo_bit_depth, &logo_color_type, &logo_data);
+    if (err != ERR_SUCCESS)
+        return err;
 
-    GC gc = XCreateGC(iwin->display, iwin->window, 0, NULL);
-    XSetForeground(iwin->display, gc, BlackPixel(iwin->display, g_screen));
-    XDrawString(iwin->display, iwin->window, gc, 50, 50, "Pheonix Engine", 13);
+    for (int y = 0; y < logo_h; y++) {
+        uint8_t* p = logo_data + y * logo_w * 4;
+        for (int x = 0; x < logo_w; x++) {
+            uint8_t a = p[3];
+            p[0] = (p[0] * a) / 255;
+            p[1] = (p[1] * a) / 255;
+            p[2] = (p[2] * a) / 255;
+            p += 4;
+        }
+    }
 
-    XFlush(iwin->display);
-    XFreeGC(iwin->display, gc);
+    for (int y = 0; y < logo_h; y++) {
+        uint8_t* p = logo_data + y * logo_w * 4;
+        for (int x = 0; x < logo_w; x++) {
+            uint8_t r = p[0];
+            uint8_t g = p[1];
+            uint8_t b = p[2];
+            uint8_t a = p[3];
+
+            r = (r * a) / 255;
+            g = (g * a) / 255;
+            b = (b * a) / 255;
+
+            p[0] = b;
+            p[1] = g;
+            p[2] = r;
+            p[3] = a;
+
+            p += 4;
+        }
+    }
+
+    Window root = RootWindow(g_display, g_screen);
+
+    XVisualInfo vinfo;
+    if (!XMatchVisualInfo(g_display, g_screen, 32, TrueColor, &vinfo)) {
+        free(logo_data);
+        return ERR_WS_INIT_FAILED;
+    }
+
+    XSetWindowAttributes attrs = {0};
+    attrs.colormap = XCreateColormap(
+        g_display,
+        root,
+        vinfo.visual,
+        AllocNone
+    );
+    attrs.border_pixel = 0;
+    attrs.background_pixel = 0;
+
+    Window win = XCreateWindow(
+        g_display, root,
+        0, 0,
+        600, 300,
+        0, vinfo.depth,
+        InputOutput, vinfo.visual,
+        CWColormap | CWBorderPixel | CWBackPixel,
+        &attrs
+    );
+
+    Atom wm_window_type = XInternAtom(g_display, "_NET_WM_WINDOW_TYPE", False);
+    Atom wm_window_type_splash = XInternAtom(g_display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    XChangeProperty(g_display, win, wm_window_type, XA_ATOM, 32, PropModeReplace, (unsigned char*)&wm_window_type_splash, 1);
+    Atom wm_state = XInternAtom(g_display, "_NET_WM_STATE", False);
+    Atom wm_state_above = XInternAtom(g_display, "_NET_WM_STATE_ABOVE", False);
+    Atom wm_state_skip_taskbar = XInternAtom(g_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    Atom wm_state_skip_pager = XInternAtom(g_display, "_NET_WM_STATE_SKIP_PAGER", False);
+
+    Atom states[] = {
+        wm_state_above,
+        wm_state_skip_taskbar,
+        wm_state_skip_pager
+    };
+
+    XChangeProperty(g_display, win, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
+
+    XSelectInput(g_display, win, ExposureMask | KeyPressMask | StructureNotifyMask);
+    XMapRaised(g_display, win);
+
+    for (;;) {
+        XEvent e;
+        XNextEvent(g_display, &e);
+        if (e.type == MapNotify && e.xmap.window == win)
+            break;
+    }
+ 
+    int screen_w = DisplayWidth(g_display, g_screen);
+    int screen_h = DisplayHeight(g_display, g_screen);
+
+    int win_w = logo_w;
+    int win_h = logo_h;
+
+    XMoveWindow(g_display, win, (screen_w - win_w) / 2, (screen_h - win_h) / 2);
+
+    Picture win_pic, img_pic;
+
+    XRenderPictFormat* win_fmt = XRenderFindVisualFormat(g_display, vinfo.visual);
+    win_pic = XRenderCreatePicture(g_display, win, win_fmt, 0, NULL);
+
+    Pixmap bg_pix = XCreatePixmap(g_display, win, 600, 300, vinfo.depth);
+    GC bg_gc = XCreateGC(g_display, bg_pix, 0, NULL);
+    XSetForeground(g_display, bg_gc, BlackPixel(g_display, g_screen));
+    XFillRectangle(g_display, bg_pix, bg_gc, 0, 0, 600, 300);
+
+    Picture bg_pic = XRenderCreatePicture(g_display, bg_pix, XRenderFindVisualFormat(g_display, vinfo.visual), 0, NULL);
+    XRenderComposite(g_display, PictOpSrc, bg_pic, None, win_pic, 0, 0, 0, 0, 0, 0, 600, 300);
+
+    XRenderPictFormat* pix_fmt = XRenderFindStandardFormat(g_display, PictStandardARGB32);
+    Pixmap pix = XCreatePixmap(g_display, win, logo_w, logo_h, 32);
+
+    GC gc = XCreateGC(g_display, pix, 0, NULL);
+    XImage* ximage = XCreateImage(
+        g_display, vinfo.visual,
+        32, ZPixmap, 0,
+        (char*)logo_data, logo_w, logo_h, 32, logo_w * 4
+    );
+    XPutImage(g_display, pix, gc, ximage, 0, 0, 0, 0, logo_w, logo_h);
+    
+    img_pic = XRenderCreatePicture(g_display, pix, pix_fmt, 0, NULL);
+ 
+    int logo_scaled_w = logo_w / 2;
+    int logo_scaled_h = logo_h / 2;
+    int dest_x = screen_w - logo_scaled_w - 50; // right-center offset
+    int dest_y = (screen_h - logo_scaled_h) / 2;
+
+    XRenderComposite(
+        g_display, PictOpOver,
+        img_pic, None,
+        win_pic,
+        0, 0,
+        0, 0,
+        dest_x, dest_y,
+        logo_scaled_w, logo_scaled_h
+    );
+
+    XFlush(g_display);
+
+    struct timespec start, now;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    while (1) {
+        while (XPending(g_display)) {
+            XEvent e;
+            XNextEvent(g_display, &e);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000;
+        if (elapsed_ms >= 3000)
+            break;
+
+        nanosleep(&(struct timespec){0, 1000000}, NULL);
+    }
+
+    XDestroyWindow(g_display, win);
+    XSync(g_display, False);
+
+    if (img_pic) XRenderFreePicture(g_display, img_pic);
+    if (win_pic) XRenderFreePicture(g_display, win_pic);
+    XFreeColormap(g_display, attrs.colormap);
+    XFreePixmap(g_display, pix);
+    XFreeGC(g_display, gc);
+    if (bg_pic) XRenderFreePicture(g_display, bg_pic);
+    XFreePixmap(g_display, bg_pix);
+    XFreeGC(g_display, bg_gc);
+
+    ximage->data = NULL;
+    XDestroyImage(ximage);
+
+    free(logo_data);
 
     return ERR_SUCCESS;
 }

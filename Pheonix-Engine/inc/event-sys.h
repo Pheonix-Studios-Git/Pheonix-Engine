@@ -131,7 +131,7 @@ typedef struct {
 typedef struct {
     union {
         PX_Event_GSignal_UIDropdownClick ui_dropdown_click;
-    }
+    };
 } PX_Event_GSignal;
 
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position);
@@ -140,4 +140,4 @@ void event_mouse_move(PX_Vector2 mouse_position);
 void event_hover_dropdown(PX_Dropdown* dd);
 void event_click_dropdown(PX_Dropdown* dd);
 void event_send_gsignal(PX_Event_GSignals type, PX_Event_GSignal* signal);
-PX_Event_GSignal* event_pop_gsignal(void);
+void event_pop_gsignal(PX_Event_GSignal* out);
