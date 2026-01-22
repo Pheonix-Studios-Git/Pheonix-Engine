@@ -51,6 +51,9 @@ static int engine_mouse_y = 0;
 static PX_Dropdown engine_menu_dropdown = {0};
 // Colors
 static PX_Color4 engine_ui_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
+// Identifiers
+static PX_Event_Identifier engine_obj_identifiers[10];
+static int engine_obj_identifier_count = 0;
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -184,6 +187,11 @@ static void enginef_init_dropdowns(void) {
             option->width = px_rs_text_width(engine_font_ui, labels[j], engine_menu_dropdown.font_size);
         }
     }
+
+    engine_obj_identifiers[engine_obj_identifier_count++] = (PX_Event_Identifier){
+        .ptr = (void*)&engine_menu_dropdown,
+        .identifier = "menubar"
+    };
 }
 
 static void enginef_event_mouse_click(void) {
@@ -214,6 +222,17 @@ static void enginef_core_render(void) {
     // Dropdowns
     engine_menu_dropdown.width = engine_window_main_w;
     px_rs_draw_dropdown(&engine_menu_dropdown);
+}
+
+static void enginef_core_handle_core_signals(PX_Event_GSignal* core_signal, bool core_signal_active) {
+    if (!core_signal || !core_signal_active) return;
+
+    switch (core_signal->type) {
+        case EVENT_GSIGNAL_CORE_QUIT:
+            engine_running = false;
+            break;
+        default: break;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -293,6 +312,7 @@ int main(int argc, char** argv) {
     // Load Objects
     // Dropdowns
     enginef_init_dropdowns();
+    menu_evs_init(&engine_menu_dropdown, NULL);
     // Project
     editor_new_project("Untitled");
 
@@ -302,6 +322,13 @@ int main(int argc, char** argv) {
         px_rs_ui_frame_update();
         enginef_core_render();
         enginef_event_hover_check();
+
+        // Global Signals
+        PX_Event_GSignal core_signal = {0};
+        bool core_signal_active = false;
+        event_handle_gsignals((PX_Event_Identifier**)&engine_obj_identifiers, engine_obj_identifier_count, &core_signal, &core_signal_active);
+        // Global Core Signals
+        enginef_core_handle_core_signals(&core_signal, core_signal_active);
 
         last_err = px_ws_poll(&engine_window_main);
         if (last_err != ERR_SUCCESS) {

@@ -7,9 +7,9 @@
 #include <err-codes.h>
 #include <loaders/sdf-loader.h>
 
-#include <cJSON.h>
+#include <external/cJSON.h>
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include <external/stb_image.h>
 
 PX_Font* px_font_load(const char* path) {
     PX_Font* font = calloc(1, sizeof(PX_Font));

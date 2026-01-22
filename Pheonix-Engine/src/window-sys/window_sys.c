@@ -114,3 +114,9 @@ t_err_codes px_ws_swap_buffers(PX_Window* win) {
 
     return g_backend->swap_buffers(win);
 }
+
+char* px_ws_open_file_selector_dialog(void) {
+    if (!g_backend)
+        return NULL;
+    return g_backend->open_file_selector_dialog();
+}

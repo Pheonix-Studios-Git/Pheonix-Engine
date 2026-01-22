@@ -102,8 +102,9 @@ void event_click_dropdown(PX_Dropdown* dd) {
             PX_Transform2 op_tran = (PX_Transform2){(PX_Vector2){opened_panel->stext_pos.x, y}, (PX_Scale2){op->width, op->height}};
             if (is_mouse_on(op_tran)) {
                 PX_Event_GSignal signal = {0};
-                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){open_index, j};
-                event_send_gsignal(EVENT_GSIGNAL_UI_DROPDOWN_CLICK, &signal);
+                signal.type = EVENT_GSIGNAL_UI_DROPDOWN_CLICK;
+                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){dd, open_index, j};
+                event_send_gsignal(&signal);
                 opened_panel->is_open = false;
                 return;
             }
@@ -139,8 +140,8 @@ void event_click_dropdown(PX_Dropdown* dd) {
     if (open_index > -1) (&dd->items[open_index])->is_open = false;
 }
 
-void event_send_gsignal(PX_Event_GSignals type, PX_Event_GSignal* signal) {
-    if (!signal || type == EVENT_GSIGNAL_UNKNOWN || gsignals_count >= MAX_GLOBAL_SIGNALS) return;
+void event_send_gsignal(PX_Event_GSignal* signal) {
+    if (!signal || signal->type == EVENT_GSIGNAL_UNKNOWN || gsignals_count >= MAX_GLOBAL_SIGNALS) return;
     memcpy(&gsignal_queue[gsignals_count], signal, sizeof(PX_Event_GSignal));
     gsignals_count++;
 }
@@ -155,3 +156,35 @@ void event_pop_gsignal(PX_Event_GSignal* out) {
     memcpy(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
 }
 
+static char* get_identifier(PX_Event_Identifier** identifiers, int size, void* ptr) {
+    for (int i = 0; i < size; i++) {
+        if (identifiers[i]->ptr == ptr)
+            return identifiers[i]->identifier;
+    }
+    return NULL;
+}
+
+void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_len, PX_Event_GSignal* core_signal, bool* core_signal_active) {
+    PX_Event_GSignal sig = {0};
+    PX_Event_GSignal* s = &sig;
+    event_pop_gsignal(s);
+    if (s->type == EVENT_GSIGNAL_UNKNOWN) return;
+
+    switch (s->type) {
+        case EVENT_GSIGNAL_UI_DROPDOWN_CLICK:
+            char* iden = get_identifier(identifiers, identifiers_len, (void*)s->ui_dropdown_click.dropdown);
+            if (!iden) break;
+
+            if (strcmp(iden, "menubar") == 0) {
+                menu_evs_handle_events(s);
+            }
+            break;
+        case EVENT_GSIGNAL_CORE_QUIT:
+            memcpy(core_signal, &s, sizeof(PX_Event_GSignal));
+            *core_signal_active = true;
+            return;
+        default: break;
+    }
+
+    *core_signal_active = false;
+}

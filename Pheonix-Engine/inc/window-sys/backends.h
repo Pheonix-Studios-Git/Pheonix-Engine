@@ -42,5 +42,7 @@ typedef struct px_ws_backend {
     
     t_err_codes (*create_ctx)(PX_Window*);
     t_err_codes (*swap_buffers)(PX_Window*);
+
+    char* (*open_file_selector_dialog)(void);
 } t_px_ws_backend;
 

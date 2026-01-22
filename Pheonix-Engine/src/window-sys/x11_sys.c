@@ -21,6 +21,9 @@
 #include <X11/XKBlib.h>
 #include <X11/extensions/Xrender.h>
 
+#define HAVE_X11
+#include <external/sodf.h>
+
 #include <rendering-sys/opengl.h>
 
 struct keysym_map {
@@ -481,6 +484,7 @@ static t_err_codes x11_poll_events(PX_Window* win) {
 }
 
 static t_err_codes x11_engine_splash(void) {
+    return ERR_SUCCESS; // TODO: Fix Splash Screen
     int logo_w, logo_h;
     int logo_bit_depth;
     int logo_color_type;
@@ -716,6 +720,28 @@ static t_err_codes x11_swap_buffers(PX_Window* win) {
     return ERR_SUCCESS;
 }
 
+static char* x11_open_file_selector_dialog(void) {
+    if (x_fib_configure(1, "Select File") != 0) return NULL;
+    if (x_fib_show(g_display, 0, 0, 0) != 0) return NULL;
+
+    bool selected = false;
+    while (XPending(g_display)) {
+        XEvent e;
+        XNextEvent(g_display, &e);
+        int st = x_fib_handle_events(g_display, &e);
+        if (st > 0) {
+            selected = true;
+            break;
+        } else if (st < 0) {
+            break;
+        }
+    }
+
+    if (!selected) return NULL;
+    char* file = x_fib_filename();
+    return file;
+}
+
 const t_px_ws_backend px_ws_backend_x11 = {
     .init = x11_init,
     .shutdown = x11_shutdown,
@@ -727,6 +753,7 @@ const t_px_ws_backend px_ws_backend_x11 = {
     .show_splash = x11_engine_splash,
     .window_design = x11_window_design,
     .create_ctx = x11_create_ctx,
-    .swap_buffers = x11_swap_buffers
+    .swap_buffers = x11_swap_buffers,
+    .open_file_selector_dialog = x11_open_file_selector_dialog
 };
 
