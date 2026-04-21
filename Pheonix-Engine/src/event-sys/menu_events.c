@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <stdbool.h>
 
 #include <window-sys.h>
@@ -7,12 +6,17 @@
 #include <editor.h>
 #include <event-sys/menu-events.h>
 
+#include <editor.h>
+
 static char* save_path = NULL;
 static PX_Dropdown* menu_dropdown = NULL;
 
 // FILE Options
+static void handle_file_new(void) {
+    editor_new_project("Untitled");
+}
 static void handle_file_open(void) {
-
+    char* file = px_ws_open_file_selector_dialog();
 }
 static void handle_file_save(void) {
 
@@ -40,6 +44,7 @@ void menu_evs_handle_events(PX_Event_GSignal* signal) {
             switch (signal->ui_dropdown_click.opened_index) {
                 case 0: // FILE
                     switch (signal->ui_dropdown_click.clicked_option) {
+                        case 0: handle_file_new(); break;
                         case 1: handle_file_open(); break;
                         case 2: handle_file_save(); break;
                         case 3: handle_file_save_as(); break;

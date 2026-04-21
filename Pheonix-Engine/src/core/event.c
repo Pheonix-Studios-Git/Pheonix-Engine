@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -158,8 +157,9 @@ void event_pop_gsignal(PX_Event_GSignal* out) {
 
 static char* get_identifier(PX_Event_Identifier** identifiers, int size, void* ptr) {
     for (int i = 0; i < size; i++) {
-        if (identifiers[i]->ptr == ptr)
-            return identifiers[i]->identifier;
+        if (identifiers[i]->ptr == ptr) {
+            return (char*)identifiers[i]->identifier;
+        }
     }
     return NULL;
 }
@@ -170,9 +170,10 @@ void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_le
     event_pop_gsignal(s);
     if (s->type == EVENT_GSIGNAL_UNKNOWN) return;
 
+    char* iden = NULL;
     switch (s->type) {
         case EVENT_GSIGNAL_UI_DROPDOWN_CLICK:
-            char* iden = get_identifier(identifiers, identifiers_len, (void*)s->ui_dropdown_click.dropdown);
+            iden = get_identifier(identifiers, identifiers_len, (void*)s->ui_dropdown_click.dropdown);
             if (!iden) break;
 
             if (strcmp(iden, "menubar") == 0) {
@@ -180,7 +181,7 @@ void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_le
             }
             break;
         case EVENT_GSIGNAL_CORE_QUIT:
-            memcpy(core_signal, &s, sizeof(PX_Event_GSignal));
+            memcpy(core_signal, s, sizeof(PX_Event_GSignal));
             *core_signal_active = true;
             return;
         default: break;

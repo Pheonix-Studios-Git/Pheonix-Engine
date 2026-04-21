@@ -53,6 +53,7 @@ static PX_Dropdown engine_menu_dropdown = {0};
 static PX_Color4 engine_ui_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
 // Identifiers
 static PX_Event_Identifier engine_obj_identifiers[10];
+static PX_Event_Identifier* engine_obj_identifiers_x[10];
 static int engine_obj_identifier_count = 0;
 
 static void print_help(void) {
@@ -172,7 +173,7 @@ static void enginef_init_dropdowns(void) {
 
         for (int j = 0; j < item->option_count; j++) {
             PX_DropdownOption* option = &item->options[j];
-            const char** labels;
+            const char** labels = NULL;
 
             switch(i) {
                 case 0: labels = file_menu; break;
@@ -192,6 +193,7 @@ static void enginef_init_dropdowns(void) {
         .ptr = (void*)&engine_menu_dropdown,
         .identifier = "menubar"
     };
+    engine_obj_identifiers_x[engine_obj_identifier_count-1] = (PX_Event_Identifier*)&engine_obj_identifiers[engine_obj_identifier_count-1];
 }
 
 static void enginef_event_mouse_click(void) {
@@ -326,7 +328,7 @@ int main(int argc, char** argv) {
         // Global Signals
         PX_Event_GSignal core_signal = {0};
         bool core_signal_active = false;
-        event_handle_gsignals((PX_Event_Identifier**)&engine_obj_identifiers, engine_obj_identifier_count, &core_signal, &core_signal_active);
+        event_handle_gsignals((PX_Event_Identifier**)&engine_obj_identifiers_x, engine_obj_identifier_count, &core_signal, &core_signal_active);
         // Global Core Signals
         enginef_core_handle_core_signals(&core_signal, core_signal_active);
 

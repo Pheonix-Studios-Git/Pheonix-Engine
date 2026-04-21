@@ -729,7 +729,7 @@ static char* x11_open_file_selector_dialog(void) {
         XEvent e;
         XNextEvent(g_display, &e);
         int st = x_fib_handle_events(g_display, &e);
-        if (st > 0) {
+        if (st == 0) {
             selected = true;
             break;
         } else if (st < 0) {

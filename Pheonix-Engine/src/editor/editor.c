@@ -1,7 +1,5 @@
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
-#include <string.h>
 
 #include <rendering-sys.h>
 #include <err-codes.h>
