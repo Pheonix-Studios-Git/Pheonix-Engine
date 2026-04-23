@@ -1,0 +1,32 @@
+{
+  "Author": "Pheonix-Studios",
+  "Binaries": [
+    {
+      "Arch": [
+        "x86_64"
+      ],
+      "Executable": true,
+      "Name": "pheonix-engine",
+      "Os": [
+        "linux"
+      ],
+      "Path": "Pheonix-Engine/bin/linux/x86_64/pheonix-engine",
+      "Sha256": "871b0ea91911807d5e12c94723cf702d867dc44a152aa3fabd40c7e29fd5f5ad",
+      "Size": 571680
+    }
+  ],
+  "Build": {
+    "AllowedSigners": "keys/allowed_signers",
+    "Date": "2026-04-23",
+    "SignatureIdentity": "pheonix-pheonix-engine"
+  },
+  "Conflicts": [],
+  "Dependencies": [],
+  "Description": "Parallel Hardware Enhanced Optimised engine for Next Iteration eXperiences Engine",
+  "Id": "pheonix_studios.pheonix-engine",
+  "License": "LICENSE",
+  "Name": "Pheonix-Engine",
+  "Readme": "README.md",
+  "Status": "beta",
+  "Version": "0.1.0"
+}
