@@ -8,7 +8,7 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
-BUILD_DATE := $(shell date +%Y-%m-%d)
+BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
 LINUX_OUT := $(LINUX_x86_64_DIR)/pheonix-engine
 WINDOWS_OUT := $(WINDOWS_x86_64_DIR)/pheonix-engine.exe

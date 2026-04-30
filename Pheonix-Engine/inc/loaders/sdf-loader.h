@@ -9,7 +9,6 @@
 #define PX_SDF_MAGIC 0x46534450 // PSDF
 #define PX_SDF_CUR_VERSION 0x0100
 
-#pragma pack(push, 1)
 struct px_sdf_header {
     uint32_t magic;
     uint16_t version;
@@ -23,10 +22,8 @@ struct px_sdf_header {
     float ascent;
     float descent;
     float line_gap;
-};
-#pragma pack(pop)
+} __attribute__((packed));
 
-#pragma pack(push, 1)
 struct px_sdf_glyph {
     uint32_t codepoint;
 
@@ -39,8 +36,7 @@ struct px_sdf_glyph {
     
     float u0, v0;
     float u1, v1;
-};
-#pragma pack(pop)
+} __attribute__((packed));
 
 struct px_sdf_font_data {
     GLuint texture;
