@@ -26,6 +26,23 @@ ifeq ($(ARCH),i686)
     ARCH := x86
 endif
 
+GLOBAL_MACROS := 
+POSIX := 0
+
+ifeq ($(OS),linux)
+    POSIX := 1
+endif
+ifeq ($(OS),darwin)
+    POSIX := 1
+endif
+ifeq ($(OS),freebsd)
+    POSIX := 1
+endif
+
+ifeq ($(POSIX), 1)
+	GLOBAL_MACROS += -D_POSIX_C_SOURCE=200809L
+endif
+
 OUT_DIR := $(BIN_DIR)/$(OS)/$(ARCH)
 TARGET := $(OUT_DIR)/$(PROJECT)
 
@@ -38,7 +55,7 @@ WARN := -Wall -Wextra -Wpedantic -Wstrict-prototypes
 DEFS :=
 INCS := -I$(INC_DIR)
 
-COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing
+COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS)
 LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender
 
 ifeq ($(MODE),debug)

@@ -9,6 +9,10 @@
 #define PX_RS_MAX_DROPDOWN_OPTIONS 16
 
 typedef struct {
+    float m[16];
+} PX_Mat4;
+
+typedef struct {
     unsigned char r, g, b, a;
 } PX_Color4;
 
@@ -21,7 +25,7 @@ typedef struct {
 } PX_Vector2;
 
 typedef struct {
-    int x, y, z;
+    float x, y, z;
 } PX_Vector3;
 
 typedef struct {
@@ -29,7 +33,7 @@ typedef struct {
 } PX_Scale2;
 
 typedef struct {
-    int w, h, l;
+    float w, h, l;
 } PX_Scale3;
 
 typedef struct {
@@ -100,6 +104,11 @@ typedef struct {
 
     int hover_index;
 } PX_Dropdown;
+
+typedef struct {
+    PX_Vector3 position;
+    PX_Orientation3 rotation;
+} PX_Camera;
 
 t_err_codes px_rs_init_ui(PX_Scale2 screen_scale);
 void px_rs_shutdown_ui(void);

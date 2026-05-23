@@ -22,7 +22,7 @@
 #include <X11/extensions/Xrender.h>
 
 #define HAVE_X11
-#include <external/sodf.h>
+#include <external/tinyfiledialogs.h>
 
 #include <rendering-sys/opengl.h>
 
@@ -721,25 +721,14 @@ static t_err_codes x11_swap_buffers(PX_Window* win) {
 }
 
 static char* x11_open_file_selector_dialog(void) {
-    if (x_fib_configure(1, "Select File") != 0) return NULL;
-    if (x_fib_show(g_display, 0, 0, 0) != 0) return NULL;
-
-    bool selected = false;
-    while (XPending(g_display)) {
-        XEvent e;
-        XNextEvent(g_display, &e);
-        int st = x_fib_handle_events(g_display, &e);
-        if (st == 0) {
-            selected = true;
-            break;
-        } else if (st < 0) {
-            break;
-        }
-    }
-
-    if (!selected) return NULL;
-    char* file = x_fib_filename();
-    return file;
+    const char* file = tinyfd_openFileDialog("Select File", "", 0, NULL, NULL, 0);
+    if (!file) return NULL;
+    
+    size_t sz = strlen(file);
+    char* f = (char*)malloc(sz + 1);
+    memcpy(f, file, sz);
+    f[sz] = '\0';
+    return f;
 }
 
 const t_px_ws_backend px_ws_backend_x11 = {

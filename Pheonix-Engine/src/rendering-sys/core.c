@@ -37,6 +37,12 @@ struct ui_vertex {
     unsigned char a;
 };
 
+struct vertex_3d {
+    float x, y, z;
+    float nx, ny, nz;
+    float u, v;
+};
+
 enum ui_batch_type {
     UI_BATCH_PANEL,
     UI_BATCH_LINE,
@@ -102,8 +108,31 @@ struct ui_renderer {
     int screen_h;
 };
 
+struct renderer_3d {
+    int initialized;
+
+    unsigned int program;
+
+    unsigned int vbo;
+    unsigned int vao;
+    unsigned int ebo;
+
+    // Core 3D Programs
+    int attr_pos;
+    int attr_uv;
+    int attr_normal;
+
+    int uni_model;
+    int uni_view;
+    int uni_projection;
+    int uni_texture;
+};
+
 static struct ui_renderer gr_ui_b = {0};
 static struct ui_renderer* gr_ui = &gr_ui_b;
+
+static struct renderer_3d gr_3d_b = {0};
+static struct renderer_3d* gr_3d = &gr_3d_b;
 
 static char* read_shader(const char* name) {
     char path[512];
@@ -282,13 +311,15 @@ static void push_batch(struct ui_batch* b) {
     }
 }
 
-t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
+t_err_codes px_rs_init(void) {
     GLenum err = glewInit();
     if (err != GLEW_OK) {
         fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
         return ERR_GL_GLEW_INIT_FAILED;
     }
+}
 
+t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     memset(gr_ui, 0, sizeof(*gr_ui));
 
     gr_ui->program = pxgl_create_program("ui_vertex.glsl", "ui_fragment.glsl");
@@ -299,6 +330,86 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
         glDeleteProgram(gr_ui->program);
         return ERR_GL_PROGRAM_CREATION_FAILED;
     } 
+
+    // Core UI Programs
+    gr_ui->uni_projection = glGetUniformLocation(gr_ui->program, "u_projection");
+    gr_ui->uni_size = glGetUniformLocation(gr_ui->program, "u_size");
+    gr_ui->uni_corner_radius = glGetUniformLocation(gr_ui->program, "u_corner_radius");
+    gr_ui->uni_noise = glGetUniformLocation(gr_ui->program, "u_noise");
+    gr_ui->uni_texel_size = glGetUniformLocation(gr_ui->program, "u_texel_size");
+    gr_ui->uni_texture = glGetUniformLocation(gr_ui->program, "u_texture");
+    gr_ui->attr_pos = glGetAttribLocation(gr_ui->program, "a_pos");
+    gr_ui->attr_uv = glGetAttribLocation(gr_ui->program, "a_uv");
+    gr_ui->attr_color = glGetAttribLocation(gr_ui->program, "a_color");
+    // Text Programs
+    gr_ui->text_uni_projection = glGetUniformLocation(gr_ui->text_program, "u_projection");
+    gr_ui->text_uni_texture = glGetUniformLocation(gr_ui->text_program, "u_font_text");
+    gr_ui->text_uni_sdf_width = glGetUniformLocation(gr_ui->text_program, "u_sdf_width");
+    gr_ui->text_uni_pixel_height = glGetUniformLocation(gr_ui->text_program, "u_pixel_height");
+    gr_ui->text_uni_outline_width = glGetUniformLocation(gr_ui->text_program, "u_outline_width");
+    gr_ui->text_uni_outline_color = glGetUniformLocation(gr_ui->text_program, "u_outline_color");
+    gr_ui->text_attr_pos = glGetAttribLocation(gr_ui->text_program, "a_pos");
+    gr_ui->text_attr_uv = glGetAttribLocation(gr_ui->text_program, "a_uv");
+    gr_ui->text_attr_color = glGetAttribLocation(gr_ui->text_program, "a_color");
+
+    // Textures Pre-made
+    unsigned int white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    glGenTextures(1, &gr_ui->blank_tex);
+    glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA,
+        1, 1,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        white_pixel
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenVertexArrays(1, &gr_ui->vao);
+    glGenBuffers(1, &gr_ui->vbo);
+    glGenBuffers(1, &gr_ui->ebo);
+
+    glBindVertexArray(gr_ui->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_ui->ebo);
+
+    unsigned short indices[MAX_VERTEX_COUNT / 4 * 6];
+    for (int i = 0, v = 0; i < (MAX_VERTEX_COUNT / 4 * 6); i += 6, v += 4) {
+        indices[i + 0] = v + 0; indices[i + 1] = v + 1; indices[i + 2] = v + 2;
+        indices[i + 3] = v + 2; indices[i + 4] = v + 3; indices[i + 5] = v + 0;
+    }
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    gr_ui->vertex_capacity = MAX_VERTEX_COUNT;
+    gr_ui->vertices = (struct ui_vertex*)malloc(sizeof(struct ui_vertex) * gr_ui->vertex_capacity);
+    if (!gr_ui->vertices) {
+        return ERR_ALLOC_FAILED;
+    }
+
+    gr_ui->screen_w = screen_scale.w;
+    gr_ui->screen_h = screen_scale.h;
+    gr_ui->initialized = true;
+
+    glViewport(0, 0, screen_scale.w, screen_scale.h);
+
+    return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_init_3d(PX_Scale2 screen_scale) {
+    memset(gr_3d, 0, sizeof(*gr_3d));
+
+    gr_3d->program = pxgl_create_program("ui_vertex.glsl", "ui_fragment.glsl");
+    if (gr_3d->program == 0)
+        return ERR_GL_PROGRAM_CREATION_FAILED;
 
     // Core UI Programs
     gr_ui->uni_projection = glGetUniformLocation(gr_ui->program, "u_projection");
