@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <window-sys.h>
+#include <rendering-sys.h>
 #include <window-sys/backends.h>
 #include <err-codes.h>
 
@@ -119,4 +120,22 @@ char* px_ws_open_file_selector_dialog(void) {
     if (!g_backend)
         return NULL;
     return g_backend->open_file_selector_dialog();
+}
+
+t_err_codes px_ws_set_mouse_locked(PX_Window* win, bool locked) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->set_mouse_locked(win, locked);
+}
+
+t_err_codes px_ws_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->set_mouse_pos(win, pos);
 }

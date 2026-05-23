@@ -731,6 +731,35 @@ static char* x11_open_file_selector_dialog(void) {
     return f;
 }
 
+static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
+    struct window* iwin = get_window(win->handle);
+    if (locked) {
+        Pixmap blank;
+        XColor dummy;
+        char data[1] = {0};
+        blank = XCreateBitmapFromData(iwin->display, iwin->window, data, 1, 1);
+        Cursor invisible_cursor = XCreatePixmapCursor(iwin->display, blank, blank, &dummy, &dummy, 0, 0);
+
+        XGrabPointer(
+            iwin->display, iwin->window, True, 
+            PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+            GrabModeAsync, GrabModeAsync, 
+            iwin->window, invisible_cursor, CurrentTime
+        );
+        XFreePixmap(iwin->display, blank);
+    } else {
+        XUngrabPointer(iwin->display, CurrentTime);
+        XFlush(iwin->display);
+    }
+    return ERR_SUCCESS;
+}
+
+static t_err_codes x11_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
+    struct window* iwin = get_window(win->handle);
+    XWarpPointer(iwin->display, None, iwin->window, 0, 0, 0, 0, pos.x, pos.y);
+    return ERR_SUCCESS;
+}
+
 const t_px_ws_backend px_ws_backend_x11 = {
     .init = x11_init,
     .shutdown = x11_shutdown,
@@ -743,6 +772,8 @@ const t_px_ws_backend px_ws_backend_x11 = {
     .window_design = x11_window_design,
     .create_ctx = x11_create_ctx,
     .swap_buffers = x11_swap_buffers,
-    .open_file_selector_dialog = x11_open_file_selector_dialog
+    .open_file_selector_dialog = x11_open_file_selector_dialog,
+    .set_mouse_locked = x11_set_mouse_locked,
+    .set_mouse_pos = x11_set_mouse_pos
 };
 

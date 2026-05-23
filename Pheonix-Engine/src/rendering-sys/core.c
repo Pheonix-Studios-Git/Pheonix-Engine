@@ -4,16 +4,19 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <cglm/cglm.h>
 
 #include <rendering-sys.h>
 #include <err-codes.h>
 #include <loaders/sdf-loader.h>
 #include <decoders/unicode.h>
+#include <event-sys.h>
 
 #include <rendering-sys/opengl.h>
 
 #define MAX_BATCHES 256
 #define MAX_VERTEX_COUNT 8192
+#define MAX_3D_INDICES 131072
 
 struct sdf_font {
     GLuint texture;
@@ -49,6 +52,11 @@ enum ui_batch_type {
     UI_BATCH_TEXT
 };
 
+enum batch_3d_type {
+    BATCH_3D_SIMPLE,
+    BATCH_3D_LINES
+};
+
 struct ui_batch {
     enum ui_batch_type type;
     int vertex_offset;
@@ -62,6 +70,19 @@ struct ui_batch {
     float text_pixel_height;
     float text_outline_width;
     PX_Color4 text_outline_color;
+};
+
+struct batch_3d {
+    enum batch_3d_type type;
+
+    int vertex_offset;
+    int vertex_count;
+
+    int index_offset;
+    int index_count;
+
+    PX_Transform3 transform;
+    PX_Color4 color;
 };
 
 struct ui_renderer {
@@ -125,7 +146,37 @@ struct renderer_3d {
     int uni_model;
     int uni_view;
     int uni_projection;
+    int uni_color;
     int uni_texture;
+
+    GLuint blank_tex;
+    struct vertex_3d* vertices;
+    int vertex_count;
+    int vertex_capacity;
+
+    uint16_t* indices;
+    int index_count;
+    int index_capacity;
+
+    struct batch_3d batches[MAX_BATCHES];
+    int batch_count;
+
+    int screen_w;
+    int screen_h;
+    int screen_x;
+    int screen_y;
+};
+
+struct scene_cam {
+    vec3 position;
+    vec3 target;
+    vec3 up;
+
+    float yaw;
+    float pitch;
+
+    float move_speed;
+    float mouse_sens;
 };
 
 static struct ui_renderer gr_ui_b = {0};
@@ -133,6 +184,67 @@ static struct ui_renderer* gr_ui = &gr_ui_b;
 
 static struct renderer_3d gr_3d_b = {0};
 static struct renderer_3d* gr_3d = &gr_3d_b;
+
+static struct scene_cam gscene_cam = {0};
+
+static PX_Transform3 combine_transform3(PX_Transform3 parent, PX_Transform3 local) {
+    PX_Transform3 out = {0};
+
+    out.scale.w = parent.scale.w * local.scale.w;
+    out.scale.h = parent.scale.h * local.scale.h;
+    out.scale.l = parent.scale.l * local.scale.l;
+
+    versor p = {
+        parent.rot.x,
+        parent.rot.y,
+        parent.rot.z,
+        parent.rot.w
+    };
+
+    versor l = {
+        local.rot.x,
+        local.rot.y,
+        local.rot.z,
+        local.rot.w
+    };
+
+    versor r;
+    glm_quat_mul(p, l, r);
+
+    out.rot.x = r[0];
+    out.rot.y = r[1];
+    out.rot.z = r[2];
+    out.rot.w = r[3];
+
+    vec3 lp = {
+        local.pos.x,
+        local.pos.y,
+        local.pos.z
+    };
+
+    lp[0] *= parent.scale.w;
+    lp[1] *= parent.scale.h;
+    lp[2] *= parent.scale.l;
+
+    glm_quat_rotatev(p, lp, lp);
+
+    out.pos.x = parent.pos.x + lp[0];
+    out.pos.y = parent.pos.y + lp[1];
+    out.pos.z = parent.pos.z + lp[2];
+
+    return out;
+}
+
+static void update_cam_vectors(void) {
+    vec3 front;
+
+    front[0] = cos(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    front[1] = sin(glm_rad(gscene_cam.pitch));
+    front[2] = sin(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+
+    glm_normalize(front);
+    glm_vec3_add(gscene_cam.position, front, gscene_cam.target);
+}
 
 static char* read_shader(const char* name) {
     char path[512];
@@ -311,12 +423,93 @@ static void push_batch(struct ui_batch* b) {
     }
 }
 
+static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct batch_3d* b) {
+    memset(b, 0, sizeof(struct batch_3d));
+    memcpy(&b->transform, &transform, sizeof(PX_Transform3));
+    
+    b->color = grid->color;
+
+    b->type = BATCH_3D_LINES;
+    b->vertex_offset = gr_3d->vertex_count;
+    b->index_offset = gr_3d->index_count;
+
+    const float spacing = grid->spacing;
+    const int half = grid->half_size;
+
+    float cam_x = floorf(gscene_cam.position[0] / spacing) * spacing;
+    float cam_z = floorf(gscene_cam.position[2] / spacing) * spacing;
+
+    float extent = half * spacing;
+
+    for (int i = -half; i <= half; i++) {
+        if (gr_3d->vertex_count + 4 >= gr_3d->vertex_capacity)
+            break;
+
+        if (gr_3d->index_count + 4 >= gr_3d->index_capacity)
+            break;
+
+        uint16_t base = (uint16_t)gr_3d->vertex_count;
+
+        float p = i * spacing;
+
+        float x = cam_x + p;
+        float z = cam_z + p;
+
+        struct vertex_3d v0 = {
+            .x = x,
+            .y = 0.0f,
+            .z = cam_z - extent
+        };
+
+        struct vertex_3d v1 = {
+            .x = x,
+            .y = 0.0f,
+            .z = cam_z + extent
+        };
+
+        struct vertex_3d v2 = {
+            .x = cam_x - extent,
+            .y = 0.0f,
+            .z = z
+        };
+
+        struct vertex_3d v3 = {
+            .x = cam_x + extent,
+            .y = 0.0f,
+            .z = z
+        };
+
+        gr_3d->vertices[gr_3d->vertex_count++] = v0;
+        gr_3d->vertices[gr_3d->vertex_count++] = v1;
+        gr_3d->vertices[gr_3d->vertex_count++] = v2;
+        gr_3d->vertices[gr_3d->vertex_count++] = v3;
+
+        gr_3d->indices[gr_3d->index_count++] = base + 0;
+        gr_3d->indices[gr_3d->index_count++] = base + 1;
+
+        gr_3d->indices[gr_3d->index_count++] = base + 2;
+        gr_3d->indices[gr_3d->index_count++] = base + 3;
+    }
+
+    b->vertex_count = gr_3d->vertex_count - b->vertex_offset;
+    b->index_count = gr_3d->index_count - b->index_offset;
+}
+
+static void push_batch_3d(struct batch_3d* b) {
+    if (gr_3d->batch_count >= MAX_BATCHES)
+        return;
+
+    memcpy(&gr_3d->batches[gr_3d->batch_count], b, sizeof(struct batch_3d));
+    gr_3d->batch_count++;
+}
+
 t_err_codes px_rs_init(void) {
     GLenum err = glewInit();
     if (err != GLEW_OK) {
         fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
         return ERR_GL_GLEW_INIT_FAILED;
     }
+    return ERR_SUCCESS;
 }
 
 t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
@@ -353,7 +546,7 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     gr_ui->text_attr_color = glGetAttribLocation(gr_ui->text_program, "a_color");
 
     // Textures Pre-made
-    unsigned int white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    uint8_t white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
     glGenTextures(1, &gr_ui->blank_tex);
     glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
     glTexImage2D(
@@ -404,38 +597,46 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
     return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_init_3d(PX_Scale2 screen_scale) {
+t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
+    gscene_cam.position[0] = 8.0f;
+    gscene_cam.position[1] = 8.0f;
+    gscene_cam.position[2] = 8.0f;
+
+    gscene_cam.target[0] = 0.0f;
+    gscene_cam.target[1] = 0.0f;
+    gscene_cam.target[2] = 0.0f;
+
+    gscene_cam.up[0] = 0.0f;
+    gscene_cam.up[1] = 1.0f;
+    gscene_cam.up[2] = 0.0f;
+
+    gscene_cam.yaw = -90.0f;
+    gscene_cam.pitch = -25.0f;
+
+    gscene_cam.move_speed = 0.1f;
+    gscene_cam.mouse_sens = 0.1f;
+
     memset(gr_3d, 0, sizeof(*gr_3d));
 
-    gr_3d->program = pxgl_create_program("ui_vertex.glsl", "ui_fragment.glsl");
+    gr_3d->program = pxgl_create_program("3d_vertex.glsl", "3d_fragment.glsl");
     if (gr_3d->program == 0)
         return ERR_GL_PROGRAM_CREATION_FAILED;
 
-    // Core UI Programs
-    gr_ui->uni_projection = glGetUniformLocation(gr_ui->program, "u_projection");
-    gr_ui->uni_size = glGetUniformLocation(gr_ui->program, "u_size");
-    gr_ui->uni_corner_radius = glGetUniformLocation(gr_ui->program, "u_corner_radius");
-    gr_ui->uni_noise = glGetUniformLocation(gr_ui->program, "u_noise");
-    gr_ui->uni_texel_size = glGetUniformLocation(gr_ui->program, "u_texel_size");
-    gr_ui->uni_texture = glGetUniformLocation(gr_ui->program, "u_texture");
-    gr_ui->attr_pos = glGetAttribLocation(gr_ui->program, "a_pos");
-    gr_ui->attr_uv = glGetAttribLocation(gr_ui->program, "a_uv");
-    gr_ui->attr_color = glGetAttribLocation(gr_ui->program, "a_color");
-    // Text Programs
-    gr_ui->text_uni_projection = glGetUniformLocation(gr_ui->text_program, "u_projection");
-    gr_ui->text_uni_texture = glGetUniformLocation(gr_ui->text_program, "u_font_text");
-    gr_ui->text_uni_sdf_width = glGetUniformLocation(gr_ui->text_program, "u_sdf_width");
-    gr_ui->text_uni_pixel_height = glGetUniformLocation(gr_ui->text_program, "u_pixel_height");
-    gr_ui->text_uni_outline_width = glGetUniformLocation(gr_ui->text_program, "u_outline_width");
-    gr_ui->text_uni_outline_color = glGetUniformLocation(gr_ui->text_program, "u_outline_color");
-    gr_ui->text_attr_pos = glGetAttribLocation(gr_ui->text_program, "a_pos");
-    gr_ui->text_attr_uv = glGetAttribLocation(gr_ui->text_program, "a_uv");
-    gr_ui->text_attr_color = glGetAttribLocation(gr_ui->text_program, "a_color");
+    // Core 3D Programs
+    gr_3d->attr_pos = glGetAttribLocation(gr_3d->program, "a_pos");
+    gr_3d->attr_uv = glGetAttribLocation(gr_3d->program, "a_uv");
+    gr_3d->attr_normal = glGetAttribLocation(gr_3d->program, "a_normal");
+
+    gr_3d->uni_model = glGetUniformLocation(gr_3d->program, "u_model");
+    gr_3d->uni_view = glGetUniformLocation(gr_3d->program, "u_view");
+    gr_3d->uni_projection = glGetUniformLocation(gr_3d->program, "u_projection");
+    gr_3d->uni_color = glGetUniformLocation(gr_3d->program, "u_color");
+    gr_3d->uni_texture = glGetUniformLocation(gr_3d->program, "u_texture");
 
     // Textures Pre-made
-    unsigned int white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-    glGenTextures(1, &gr_ui->blank_tex);
-    glBindTexture(GL_TEXTURE_2D, gr_ui->blank_tex);
+    uint8_t white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    glGenTextures(1, &gr_3d->blank_tex);
+    glBindTexture(GL_TEXTURE_2D, gr_3d->blank_tex);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
@@ -454,13 +655,13 @@ t_err_codes px_rs_init_3d(PX_Scale2 screen_scale) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glGenVertexArrays(1, &gr_ui->vao);
-    glGenBuffers(1, &gr_ui->vbo);
-    glGenBuffers(1, &gr_ui->ebo);
+    glGenVertexArrays(1, &gr_3d->vao);
+    glGenBuffers(1, &gr_3d->vbo);
+    glGenBuffers(1, &gr_3d->ebo);
 
-    glBindVertexArray(gr_ui->vao);
-    glBindBuffer(GL_ARRAY_BUFFER, gr_ui->vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_ui->ebo);
+    glBindVertexArray(gr_3d->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_3d->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_3d->ebo);
 
     unsigned short indices[MAX_VERTEX_COUNT / 4 * 6];
     for (int i = 0, v = 0; i < (MAX_VERTEX_COUNT / 4 * 6); i += 6, v += 4) {
@@ -469,17 +670,26 @@ t_err_codes px_rs_init_3d(PX_Scale2 screen_scale) {
     }
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    gr_ui->vertex_capacity = MAX_VERTEX_COUNT;
-    gr_ui->vertices = (struct ui_vertex*)malloc(sizeof(struct ui_vertex) * gr_ui->vertex_capacity);
-    if (!gr_ui->vertices) {
+    gr_3d->vertex_capacity = MAX_VERTEX_COUNT;
+    gr_3d->vertices = (struct vertex_3d*)malloc(sizeof(struct vertex_3d) * gr_3d->vertex_capacity);
+    if (!gr_3d->vertices) {
         return ERR_ALLOC_FAILED;
     }
 
-    gr_ui->screen_w = screen_scale.w;
-    gr_ui->screen_h = screen_scale.h;
-    gr_ui->initialized = true;
+    gr_3d->index_capacity = MAX_3D_INDICES;
+    gr_3d->indices = (uint16_t*)malloc(sizeof(uint16_t) * gr_3d->index_capacity);
+    if (!gr_3d->indices) {
+        free(gr_3d->vertices);
+        return ERR_ALLOC_FAILED;
+    }
 
-    glViewport(0, 0, screen_scale.w, screen_scale.h);
+    gr_3d->screen_w = screen_scale.w;
+    gr_3d->screen_h = screen_scale.h;
+    gr_3d->screen_x = screen_pos.x;
+    gr_3d->screen_y = screen_pos.y;
+    gr_3d->initialized = true;
+
+    glViewport(screen_pos.x, screen_pos.y, screen_scale.w, screen_scale.h);
 
     return ERR_SUCCESS;
 }
@@ -492,19 +702,43 @@ void px_rs_shutdown_ui(void) {
     glDeleteProgram(gr_ui->program);
     glDeleteProgram(gr_ui->text_program);
 
-    free(gr_ui->vertices);
+    if (gr_ui->vertices) free(gr_ui->vertices);
     memset(gr_ui, 0, sizeof(*gr_ui));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
 }
 
+void px_rs_shutdown_3d(void) {
+    if (!gr_3d->initialized)
+        return;
+
+    glDeleteBuffers(1, &gr_3d->vbo);
+    glDeleteProgram(gr_3d->program);
+
+    if (gr_3d->vertices) free(gr_3d->vertices);
+    if (gr_3d->indices) free(gr_3d->indices);
+    memset(gr_3d, 0, sizeof(*gr_3d));
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+}
+
+void px_rs_shutdown(void) {
+    px_rs_shutdown_ui();
+    px_rs_shutdown_3d();
+}
+
 void px_rs_frame_start(void) {
     gr_ui->vertex_count = 0;
     gr_ui->batch_count = 0;
+    
+    gr_3d->vertex_count = 0;
+    gr_3d->index_count = 0;
+    gr_3d->batch_count = 0;
 }
 
-void px_rs_frame_end(void) {
+void px_rs_ui_frame_end(void) {
     if (gr_ui->vertex_count <= 0)
         return;
 
@@ -521,9 +755,8 @@ void px_rs_frame_end(void) {
 
     glBindVertexArray(gr_ui->vao);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_ui->ebo);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    unsigned int old_program = 0;
     for (int i = 0; i < gr_ui->batch_count; i++) {
         struct ui_batch* b = &gr_ui->batches[i];
         if (b->vertex_count <= 0) continue;
@@ -537,50 +770,59 @@ void px_rs_frame_end(void) {
             program = gr_ui->text_program;
         else
             program = gr_ui->program;
-        glUseProgram(program);
+        
+        if (program != old_program) glUseProgram(program);
 
-        if (b->type == UI_BATCH_PANEL) {
-            glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
-            glUniform2f(gr_ui->uni_size, b->size.w, b->size.h);
-            glUniform2f(gr_ui->uni_texel_size, b->texel_size.w, b->texel_size.h);
-            glUniform1f(gr_ui->uni_corner_radius, b->corner_radius);
-            glUniform1f(gr_ui->uni_noise, b->noise);
+        switch (b->type) {
+            case UI_BATCH_PANEL: {
+                glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+                glUniform2f(gr_ui->uni_size, b->size.w, b->size.h);
+                glUniform2f(gr_ui->uni_texel_size, b->texel_size.w, b->texel_size.h);
+                glUniform1f(gr_ui->uni_corner_radius, b->corner_radius);
+                glUniform1f(gr_ui->uni_noise, b->noise);
 
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, b->texture);
-            glUniform1i(gr_ui->uni_texture, 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, b->texture);
+                glUniform1i(gr_ui->uni_texture, 0);
 
-            attr_pos = gr_ui->attr_pos;
-            attr_uv = gr_ui->attr_uv;
-            attr_color = gr_ui->attr_color;
-        } else if (b->type == UI_BATCH_TEXT) {
-            glUniformMatrix4fv(gr_ui->text_uni_projection, 1, GL_FALSE, proj);
-            glUniform1f(gr_ui->text_uni_sdf_width, b->text_sdf_width);
-            glUniform1f(gr_ui->text_uni_pixel_height, b->text_pixel_height);
-            glUniform1f(gr_ui->text_uni_outline_width, b->text_outline_width);
-            glUniform4f(gr_ui->text_uni_outline_color, (float)b->text_outline_color.r, (float)b->text_outline_color.g, (float)b->text_outline_color.b, (float)b->text_outline_color.a);
+                attr_pos = gr_ui->attr_pos;
+                attr_uv = gr_ui->attr_uv;
+                attr_color = gr_ui->attr_color;
+                break;
+            }
+            case UI_BATCH_TEXT: {
+                glUniformMatrix4fv(gr_ui->text_uni_projection, 1, GL_FALSE, proj);
+                glUniform1f(gr_ui->text_uni_sdf_width, b->text_sdf_width);
+                glUniform1f(gr_ui->text_uni_pixel_height, b->text_pixel_height);
+                glUniform1f(gr_ui->text_uni_outline_width, b->text_outline_width);
+                glUniform4f(gr_ui->text_uni_outline_color, (float)b->text_outline_color.r, (float)b->text_outline_color.g, (float)b->text_outline_color.b, (float)b->text_outline_color.a);
 
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, b->texture);
-            glUniform1i(gr_ui->text_uni_texture, 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, b->texture);
+                glUniform1i(gr_ui->text_uni_texture, 0);
 
-            attr_pos = gr_ui->text_attr_pos;
-            attr_uv = gr_ui->text_attr_uv;
-            attr_color = gr_ui->text_attr_color;
-        } else if (b->type == UI_BATCH_LINE) {
-            glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
-            glUniform2f(gr_ui->uni_size, 0, 0);
-            glUniform2f(gr_ui->uni_texel_size, 1, 1);
-            glUniform1f(gr_ui->uni_corner_radius, 0.0f);
-            glUniform1f(gr_ui->uni_noise, 0.0f);
+                attr_pos = gr_ui->text_attr_pos;
+                attr_uv = gr_ui->text_attr_uv;
+                attr_color = gr_ui->text_attr_color;
+                break;
+            }
+            case UI_BATCH_LINE: {
+                glUniformMatrix4fv(gr_ui->uni_projection, 1, GL_FALSE, proj);
+                glUniform2f(gr_ui->uni_size, 0, 0);
+                glUniform2f(gr_ui->uni_texel_size, 1, 1);
+                glUniform1f(gr_ui->uni_corner_radius, 0.0f);
+                glUniform1f(gr_ui->uni_noise, 0.0f);
 
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, b->texture);
-            glUniform1i(gr_ui->uni_texture, 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, b->texture);
+                glUniform1i(gr_ui->uni_texture, 0);
 
-            attr_pos = gr_ui->attr_pos;
-            attr_uv = gr_ui->attr_uv;
-            attr_color = gr_ui->attr_color;
+                attr_pos = gr_ui->attr_pos;
+                attr_uv = gr_ui->attr_uv;
+                attr_color = gr_ui->attr_color;
+                break;
+            }
+            default: continue;
         }
 
         uintptr_t base_offset = (uintptr_t)b->vertex_offset * sizeof(struct ui_vertex);
@@ -600,9 +842,166 @@ void px_rs_frame_end(void) {
         glDisableVertexAttribArray(attr_pos);
         glDisableVertexAttribArray(attr_uv);
         glDisableVertexAttribArray(attr_color);
+
+        old_program = program;
     }
 
     glBindVertexArray(0);
+}
+
+void px_rs_3d_frame_end(void) {
+    if (gr_3d->vertex_count <= 0)
+        return;
+
+    glBindBuffer(GL_ARRAY_BUFFER, gr_3d->vbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        sizeof(struct vertex_3d) * gr_3d->vertex_count,
+        gr_3d->vertices,
+        GL_DYNAMIC_DRAW
+    );
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_3d->ebo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        sizeof(uint16_t) * gr_3d->index_count,
+        gr_3d->indices,
+        GL_DYNAMIC_DRAW
+    );
+
+    mat4 proj = GLM_MAT4_IDENTITY_INIT;
+    mat4 view = GLM_MAT4_IDENTITY_INIT;
+    glm_perspective(glm_rad(70.0f), (float)gr_3d->screen_w / (float)gr_3d->screen_h, 0.1f, 1000.0f, proj);
+    
+    vec3 forward;
+    forward[0] = cos(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    forward[1] = sin(glm_rad(gscene_cam.pitch));
+    forward[2] = sin(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    glm_normalize(forward);
+
+    vec3 target;
+    glm_vec3_add(gscene_cam.position, forward, target);
+    glm_lookat(gscene_cam.position, target, gscene_cam.up, view);
+
+    glBindVertexArray(gr_3d->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_3d->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_3d->ebo);
+
+    unsigned int old_program = 0;
+    for (int i = 0; i < gr_3d->batch_count; i++) {
+        struct batch_3d* b = &gr_3d->batches[i];
+        if (b->vertex_count <= 0) continue;
+
+        unsigned int program = 0;
+        int attr_pos = 0;
+        int attr_uv = 0;
+        int attr_normal = 0;
+
+        program = gr_3d->program;
+        if (old_program != program) glUseProgram(program);
+
+        mat4 model = GLM_MAT4_IDENTITY_INIT;
+        mat4 temp = GLM_MAT4_IDENTITY_INIT;
+        mat4 translation = GLM_MAT4_IDENTITY_INIT;
+        mat4 rotation = GLM_MAT4_IDENTITY_INIT;
+        mat4 scaling = GLM_MAT4_IDENTITY_INIT;
+
+        vec3 pos = {
+            b->transform.pos.x,
+            b->transform.pos.y,
+            b->transform.pos.z
+        };
+        vec3 scl = {
+            b->transform.scale.w,
+            b->transform.scale.h,
+            b->transform.scale.l
+        };
+        versor rot = {
+            b->transform.rot.x,
+            b->transform.rot.y,
+            b->transform.rot.z,
+            b->transform.rot.w
+        };
+        glm_translate(translation, pos);
+        glm_quat_mat4(rot, rotation);
+        glm_scale(scaling, scl);
+        glm_mat4_mul(translation, rotation, temp);
+        glm_mat4_mul(temp, scaling, model);
+
+        switch (b->type) {
+            case BATCH_3D_SIMPLE: {
+                glEnable(GL_DEPTH_TEST);
+                glDepthFunc(GL_LEQUAL);
+                glUniformMatrix4fv(gr_3d->uni_projection, 1, GL_FALSE, (float*)proj);
+                glUniformMatrix4fv(gr_3d->uni_view, 1, GL_FALSE, (float*)view);
+                glUniformMatrix4fv(gr_3d->uni_model, 1, GL_FALSE, (float*)model);
+                
+                glUniform4f(gr_3d->uni_color, b->color.r, b->color.g, b->color.b, b->color.a);
+
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, gr_3d->blank_tex);
+                glUniform1i(gr_3d->uni_texture, 0);
+
+                attr_pos = gr_3d->attr_pos;
+                attr_uv = gr_3d->attr_uv;
+                attr_normal = gr_3d->attr_normal;
+                break;
+            }
+            case BATCH_3D_LINES: {
+                glDisable(GL_DEPTH_TEST);
+                glUniformMatrix4fv(gr_3d->uni_projection, 1, GL_FALSE, (float*)proj);
+                glUniformMatrix4fv(gr_3d->uni_view, 1, GL_FALSE, (float*)view);
+                glUniformMatrix4fv(gr_3d->uni_model, 1, GL_FALSE, (float*)model);
+
+                glUniform4f(gr_3d->uni_color, b->color.r, b->color.g, b->color.b, b->color.a);
+
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, gr_3d->blank_tex);
+                glUniform1i(gr_3d->uni_texture, 0);
+
+                attr_pos = gr_3d->attr_pos;
+                attr_uv = gr_3d->attr_uv;
+                attr_normal = gr_3d->attr_normal;
+
+                break;
+            }
+            default: continue;
+        }
+
+        int stride = sizeof(struct vertex_3d);
+
+        glEnableVertexAttribArray(attr_pos);
+        glEnableVertexAttribArray(attr_uv);
+        glEnableVertexAttribArray(attr_normal);
+
+        glVertexAttribPointer(attr_pos, 3, GL_FLOAT, GL_FALSE, stride, (void*)(offsetof(struct vertex_3d, x)));
+        glVertexAttribPointer(attr_uv, 2, GL_FLOAT, GL_FALSE, stride, (void*)(offsetof(struct vertex_3d, u)));
+        glVertexAttribPointer(attr_normal, 3, GL_FLOAT, GL_FALSE, stride, (void*)(offsetof(struct vertex_3d, nx)));
+
+        GLenum mode = (b->type == BATCH_3D_LINES) ? GL_LINES : GL_TRIANGLES;
+
+        glDrawElements(
+            mode,
+            b->index_count,
+            GL_UNSIGNED_SHORT,
+            (void*)(b->index_offset * sizeof(uint16_t))
+        );
+
+        glDisableVertexAttribArray(attr_pos);
+        glDisableVertexAttribArray(attr_uv);
+        glDisableVertexAttribArray(attr_normal);
+
+        old_program = program;
+    }
+
+    glBindVertexArray(0);
+}
+
+void px_rs_frame_end(void) {
+    px_rs_3d_frame_update();
+    px_rs_3d_frame_end();
+    px_rs_ui_frame_update();
+    px_rs_ui_frame_end();
 }
 
 t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {
@@ -743,9 +1142,6 @@ void px_rs_ui_frame_update(void) {
         return;
 
     glViewport(0, 0, gr_ui->screen_w, gr_ui->screen_h);
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glUseProgram(gr_ui->program);
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -755,8 +1151,109 @@ void px_rs_ui_frame_update(void) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+void px_rs_3d_frame_update(void) {
+    if (!gr_3d->initialized)
+        return;
+
+    glViewport(gr_3d->screen_x, gr_3d->screen_y, gr_3d->screen_w, gr_3d->screen_h);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+
+    glDisable(GL_BLEND);
+}
+
+void px_rs_frame_update(void) {
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
 void px_rs_ui_resize(PX_Scale2 screen_scale) {
     gr_ui->screen_w = screen_scale.w;
     gr_ui->screen_h = screen_scale.h;
     glViewport(0, 0, screen_scale.w, screen_scale.h);
+}
+
+void px_rs_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
+    gr_3d->screen_w = screen_scale.w;
+    gr_3d->screen_h = screen_scale.h;
+    gr_3d->screen_x = screen_pos.x;
+    gr_3d->screen_y = screen_pos.y;
+    glViewport(screen_pos.x, screen_pos.y, screen_scale.w, screen_scale.h);
+}
+
+void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key) {
+    gscene_cam.yaw += mdelta.x * gscene_cam.mouse_sens;
+    gscene_cam.pitch -= mdelta.y * gscene_cam.mouse_sens;
+
+    if (gscene_cam.pitch > 89.0f) gscene_cam.pitch = 89.0f;
+    if (gscene_cam.pitch < -89.0f) gscene_cam.pitch = -89.0f;
+
+    vec3 forward;
+    forward[0] = cos(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    forward[1] = sin(glm_rad(gscene_cam.pitch));
+    forward[2] = sin(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    glm_normalize(forward);
+
+    vec3 right;
+    glm_vec3_cross(forward, gscene_cam.up, right);
+    glm_normalize(right);
+
+    float speed = gscene_cam.move_speed;
+
+    switch (key)
+    {
+        case EKeycode_W:
+            glm_vec3_muladds(forward, speed, gscene_cam.position);
+            break;
+
+        case EKeycode_S:
+            glm_vec3_muladds(forward, -speed, gscene_cam.position);
+            break;
+
+        case EKeycode_D:
+            glm_vec3_muladds(right, speed, gscene_cam.position);
+            break;
+
+        case EKeycode_A:
+            glm_vec3_muladds(right, -speed, gscene_cam.position);
+            break;
+
+        case EKeycode_Space:
+            gscene_cam.position[1] += speed;
+            break;
+
+        case EKeycode_LShift:
+            gscene_cam.position[1] -= speed;
+            break;
+
+        default:
+            break;
+    }
+}
+
+t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
+    struct batch_3d batch = {0};
+    int pushed = 0;
+    for (int i = 0; i < scene->editor_object_count; i++) {
+        PX_3D_Editor_Object* obj = &scene->editor_objects[i];
+        PX_Transform3 localT = obj->local_transform;
+        PX_Transform3 worldT = obj->world_transform;
+        PX_Transform3 finalT = combine_transform3(worldT, localT);
+
+        switch (obj->type){
+            case OBJECT_3D_EDITOR_GRID: {
+                if (!obj->ex_data) continue;
+                push_3d_grid(obj->ex_data, worldT, &batch);
+                break;
+            }
+            default: continue;
+        }
+        pushed++;
+    }
+    if (pushed > 0) push_batch_3d(&batch);
+    return ERR_SUCCESS;
 }

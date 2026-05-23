@@ -4,9 +4,14 @@
 
 #include <err-codes.h>
 #include <font.h>
+#include <event-sys/keycodes.h>
+
+#include <cglm/cglm.h>
 
 #define PX_RS_MAX_DROPDOWN_ITEMS 16
 #define PX_RS_MAX_DROPDOWN_OPTIONS 16
+
+#define PX_RS_MAX_OBJECTS_PER_SCENE 4096
 
 typedef struct {
     float m[16];
@@ -105,19 +110,97 @@ typedef struct {
     int hover_index;
 } PX_Dropdown;
 
-typedef struct {
-    PX_Vector3 position;
-    PX_Orientation3 rotation;
-} PX_Camera;
+typedef enum {
+    OBJECT_3D_TYPE_MESH,
+    OBJECT_3D_TYPE_LIGHT,
+    OBJECT_3D_TYPE_CAMERA,
+    OBJECT_3D_TYPE_EMPTY
+} PX_3D_Object_Type;
 
+typedef struct {
+    char* name;
+    bool active;
+    PX_3D_Object_Type type;
+
+    bool static_object;
+
+    PX_Transform3 world_transform;
+    PX_Transform3 local_transform;
+
+    size_t parent_idx;
+
+    void* ex_data;
+    PX_3D_Object_Type ex_data_type;
+} PX_3D_Object;
+
+typedef enum {
+    OBJECT_3D_EDITOR_GRID
+} PX_3D_Editor_Object_Type;
+
+typedef struct {
+    char* name;
+    bool active;
+    PX_3D_Editor_Object_Type type;
+
+    bool static_object;
+
+    PX_Transform3 world_transform;
+    PX_Transform3 local_transform;
+
+    size_t parent_idx;
+
+    void* ex_data;
+    PX_3D_Editor_Object_Type ex_data_type;
+} PX_3D_Editor_Object;
+
+typedef struct PX_BVHNode {
+    PX_Vector3 min;
+    PX_Vector3 max;
+
+    struct PX_BVHNode* left;
+    struct PX_BVHNode* right;
+
+    uint32_t first;
+    uint32_t count;
+} PX_BVHNode;
+
+typedef struct {
+    PX_3D_Object objects[PX_RS_MAX_OBJECTS_PER_SCENE];
+    int object_count;
+
+    PX_BVHNode bvh_nodes[PX_RS_MAX_OBJECTS_PER_SCENE];
+    int bvh_node_count;
+
+    PX_3D_Editor_Object editor_objects[PX_RS_MAX_OBJECTS_PER_SCENE];
+    int editor_object_count;
+} PX_Scene;
+
+typedef struct {
+    bool visible;
+
+    float half_size;
+    float spacing;
+
+    PX_Color4 color;
+} PX_EditorGrid;
+
+t_err_codes px_rs_init(void);
+t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos);
 t_err_codes px_rs_init_ui(PX_Scale2 screen_scale);
 void px_rs_shutdown_ui(void);
+void px_rs_shutdown_3d(void);
+void px_rs_shutdown(void);
 void px_rs_frame_start(void);
 void px_rs_frame_end(void);
 void px_rs_ui_frame_update(void);
+void px_rs_3d_frame_update(void);
+void px_rs_frame_update(void);
 void px_rs_ui_resize(PX_Scale2 screen_scale);
+void px_rs_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos);
+void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key);
 t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius);
 int px_rs_text_width(PX_Font* font, const char* text, float pixel_height);
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font);
 t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color);
 t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd);
+t_err_codes px_rs_draw_editor_objects(PX_Scene* scene);

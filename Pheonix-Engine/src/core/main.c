@@ -47,6 +47,7 @@ static PX_Font* engine_font_ui = NULL;
 // Mouse Info
 static int engine_mouse_x = 0;
 static int engine_mouse_y = 0;
+static bool engine_mouse_locked = false;
 // Rendering Objects
 static PX_Dropdown engine_menu_dropdown = {0};
 // Colors
@@ -55,6 +56,15 @@ static PX_Color4 engine_ui_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xF
 static PX_Event_Identifier engine_obj_identifiers[10];
 static PX_Event_Identifier* engine_obj_identifiers_x[10];
 static int engine_obj_identifier_count = 0;
+// Engine 3D Objects
+static PX_EditorGrid engine_3drenderer_editor_grid = {
+    .visible = true,
+    .half_size = 100,
+    .color = (PX_Color4){0x24, 0x24, 0x24, 0xFF},
+    .spacing = 5.0f
+};
+// 3D Renderer
+static PX_Scene engine_3drenderer_main_scene = {0};
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -116,7 +126,7 @@ static void enginef_cleanup(void) {
     }
 
     px_font_destroy(engine_font_ui);
-    px_rs_shutdown_ui();
+    px_rs_shutdown();
     px_ws_destroy(&engine_window_main);
     px_ws_shutdown();
 }
@@ -207,12 +217,9 @@ static void enginef_event_hover_check(void) {
 }
 
 static void enginef_core_render(void) {
-    // Core call
-    px_rs_frame_start();
-
     // Scene Panel
     editor_draw_scene_panel(
-        (PX_Transform2){(PX_Vector2){0, engine_menu_dropdown.height}, (PX_Scale2){(int)(engine_window_main_w / 4), engine_window_main_h}},
+        (PX_Transform2){(PX_Vector2){0, engine_menu_dropdown.height}, (PX_Scale2){(int)(engine_window_main_w / 4), engine_window_main_h - engine_menu_dropdown.height}},
         (PX_Color4){0x0A, 0x0A, 0x0A, 0x80},
         (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF},
         engine_ui_black_panel_color,
@@ -235,6 +242,21 @@ static void enginef_core_handle_core_signals(PX_Event_GSignal* core_signal, bool
             break;
         default: break;
     }
+}
+
+static void enginef_init_3drenderer_main_scene(void) {
+    PX_3D_Editor_Object gridlines = {
+        .active = true,
+        .name = "Grid Lines",
+        .type = OBJECT_3D_EDITOR_GRID,
+        .parent_idx = 0,
+        .static_object = true,
+        .local_transform = (PX_Transform3){.rot.w = 1},
+        .world_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
+        .ex_data_type = OBJECT_3D_EDITOR_GRID,
+        .ex_data = &engine_3drenderer_editor_grid
+    };
+    engine_3drenderer_main_scene.editor_objects[engine_3drenderer_main_scene.editor_object_count++] = gridlines;
 }
 
 int main(int argc, char** argv) {
@@ -291,9 +313,26 @@ int main(int argc, char** argv) {
     px_ws_window_design(&engine_window_main, &engine_window_main_design);
     
     px_ws_create_ctx(&engine_window_main);
-    last_err = px_rs_init_ui((PX_Scale2){engine_window_main_w, engine_window_main_h});
+
+    last_err = px_rs_init();
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize rendering system!\n");
+        px_ws_destroy(&engine_window_main);
+        px_ws_shutdown();
+        return last_err;
+    }
+
+    last_err = px_rs_init_ui((PX_Scale2){engine_window_main_w, engine_window_main_h});
+    if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to initialize UI rendering system!\n");
+        px_ws_destroy(&engine_window_main);
+        px_ws_shutdown();
+        return last_err;
+    }
+
+    last_err = px_rs_init_3d((PX_Scale2){engine_window_main_w - (engine_window_main_w / 4), engine_window_main_h - engine_menu_dropdown.height}, (PX_Vector2){engine_window_main_w / 4, engine_menu_dropdown.height});
+    if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to initialize 3D rendering system!\n");
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -305,7 +344,7 @@ int main(int argc, char** argv) {
     engine_font_ui = px_font_load("assets/fonts/psdf/roboto.psdf");
     if (!engine_font_ui) {
         fprintf(stderr, "Error: Failed to load UI font\n");
-        px_rs_shutdown_ui();
+        px_rs_shutdown();
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return ERR_COULD_NOT_OPEN_FILE;
@@ -318,10 +357,19 @@ int main(int argc, char** argv) {
     // Project
     editor_new_project("Untitled");
 
+    // Load scene
+    enginef_init_3drenderer_main_scene();
+
     // Render
     engine_running = true;
+    px_ws_set_mouse_locked(&engine_window_main, true);
+    engine_mouse_locked = true;
     while (engine_running) {
-        px_rs_ui_frame_update();
+        px_rs_frame_start();
+        px_rs_frame_update();
+
+        px_rs_draw_editor_objects(&engine_3drenderer_main_scene);
+        
         enginef_core_render();
         enginef_event_hover_check();
 
@@ -349,15 +397,33 @@ int main(int argc, char** argv) {
                     engine_window_main.width = ev.w;
                     engine_window_main.height = ev.h;
                     px_rs_ui_resize((PX_Scale2){ev.w, ev.h});
+                    px_rs_3d_resize((PX_Scale2){engine_window_main_w - (engine_window_main_w / 4), engine_window_main_h - engine_menu_dropdown.height}, (PX_Vector2){engine_window_main_w / 4, engine_menu_dropdown.height});
                     event_resize((PX_Scale2){ev.w, ev.h});
+                    px_ws_set_mouse_pos(&engine_window_main, (PX_Vector2){.x=engine_window_main_w/2,.y=engine_window_main_h/2});
                     break;
                 case PX_WE_MOUSE_MOVE:
+                    PX_Vector2 mDelta = {.x=ev.x-(engine_window_main_w/2), .y=ev.y-(engine_window_main_h/2)};
                     engine_mouse_x = ev.x;
                     engine_mouse_y = ev.y;
+
                     event_mouse_move((PX_Vector2){ev.x, ev.y});
+                    px_rs_update_scene_cam(mDelta, EKeycode_Unknown);
+
+                    px_ws_set_mouse_pos(&engine_window_main, (PX_Vector2){.x=engine_window_main_w/2,.y=engine_window_main_h/2});
                     break;
                 case PX_WE_MOUSE_DOWN:
+                    if (!engine_mouse_locked) {
+                        px_ws_set_mouse_locked(&engine_window_main, true);
+                        engine_mouse_locked = true;
+                    }
                     enginef_event_mouse_click();
+                    break;
+                case PX_WE_KEYDOWN:
+                    if (ev.keycode == EKeycode_Escape) {
+                        px_ws_set_mouse_locked(&engine_window_main, false);
+                        engine_mouse_locked = false;
+                    }
+                    px_rs_update_scene_cam((PX_Vector2){ev.x, ev.y}, ev.keycode);
                     break;
                 default: break;
             }
@@ -368,6 +434,8 @@ int main(int argc, char** argv) {
     }
 
     // Cleanup
+    px_ws_set_mouse_locked(&engine_window_main, false);
+    engine_mouse_locked = false;
     enginef_cleanup();
 
     return ERR_SUCCESS;
