@@ -692,12 +692,19 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    XVisualInfo* visual = glXChooseVisual(iwin->display, 0, (int[]){
+    int attr[] = {
         GLX_RGBA,
-        GLX_DEPTH_SIZE, 24,
         GLX_DOUBLEBUFFER,
+        GLX_RED_SIZE, 8,
+        GLX_GREEN_SIZE, 8,
+        GLX_BLUE_SIZE, 8,
+        GLX_DEPTH_SIZE, 24,
+        GLX_SAMPLE_BUFFERS, 1,
+        GLX_SAMPLES, 4, // Request 4x MSAA
         None
-    });
+    };
+
+    XVisualInfo* visual = glXChooseVisual(iwin->display, 0, attr);
 
     GLXContext gl_ctx = glXCreateContext(iwin->display, visual, 0, True);
     iwin->gl_ctx_valid = true;

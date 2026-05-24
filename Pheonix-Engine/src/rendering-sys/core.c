@@ -13,177 +13,16 @@
 #include <event-sys.h>
 
 #include <rendering-sys/opengl.h>
+#include <rendering-sys/internal.h>
 
-#define MAX_BATCHES 256
-#define MAX_VERTEX_COUNT 8192
-#define MAX_3D_INDICES 131072
-
-struct sdf_font {
-    GLuint texture;
-    struct px_sdf_glyph* glyphs;
-    uint16_t glyph_count;
-
-    float ascent;
-    float descent;
-    float line_gap;
-    float sdf_range;
-};
-
-struct ui_vertex {
-    float x;
-    float y;
-    float u;
-    float v;
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-    unsigned char a;
-};
-
-struct vertex_3d {
-    float x, y, z;
-    float nx, ny, nz;
-    float u, v;
-};
-
-enum ui_batch_type {
-    UI_BATCH_PANEL,
-    UI_BATCH_LINE,
-    UI_BATCH_TEXT
-};
-
-enum batch_3d_type {
-    BATCH_3D_SIMPLE,
-    BATCH_3D_LINES
-};
-
-struct ui_batch {
-    enum ui_batch_type type;
-    int vertex_offset;
-    int vertex_count;
-    PX_Scale2 size;
-    PX_Scale2 texel_size;
-    float noise;
-    float corner_radius;
-    GLuint texture;
-    float text_sdf_width;
-    float text_pixel_height;
-    float text_outline_width;
-    PX_Color4 text_outline_color;
-};
-
-struct batch_3d {
-    enum batch_3d_type type;
-
-    int vertex_offset;
-    int vertex_count;
-
-    int index_offset;
-    int index_count;
-
-    PX_Transform3 transform;
-    PX_Color4 color;
-};
-
-struct ui_renderer {
-    int initialized;
-
-    unsigned int program;
-    unsigned int text_program;
-
-    unsigned int vbo;
-    unsigned int vao;
-    unsigned int ebo;
-    
-    // Core UI Programs
-    int attr_pos;
-    int attr_uv;
-    int attr_color;
-    int uni_projection;
-    int uni_size;
-    int uni_noise;
-    int uni_corner_radius;
-    int uni_texel_size;
-    int uni_texture;
-    // Text Programs
-    int text_uni_projection;
-    int text_uni_texture;
-    int text_uni_sdf_width;
-    int text_uni_pixel_height;
-    int text_uni_outline_width;
-    int text_uni_outline_color;
-    int text_attr_pos;
-    int text_attr_uv;
-    int text_attr_color;
-
-    GLuint blank_tex;
-
-    struct ui_vertex* vertices;
-    int vertex_count;
-    int vertex_capacity;
-
-    struct ui_batch batches[MAX_BATCHES];
-    int batch_count;
-
-    int screen_w;
-    int screen_h;
-};
-
-struct renderer_3d {
-    int initialized;
-
-    unsigned int program;
-
-    unsigned int vbo;
-    unsigned int vao;
-    unsigned int ebo;
-
-    // Core 3D Programs
-    int attr_pos;
-    int attr_uv;
-    int attr_normal;
-
-    int uni_model;
-    int uni_view;
-    int uni_projection;
-    int uni_color;
-    int uni_texture;
-
-    GLuint blank_tex;
-    struct vertex_3d* vertices;
-    int vertex_count;
-    int vertex_capacity;
-
-    uint16_t* indices;
-    int index_count;
-    int index_capacity;
-
-    struct batch_3d batches[MAX_BATCHES];
-    int batch_count;
-
-    int screen_w;
-    int screen_h;
-    int screen_x;
-    int screen_y;
-};
-
-struct scene_cam {
-    vec3 position;
-    vec3 target;
-    vec3 up;
-
-    float yaw;
-    float pitch;
-
-    float move_speed;
-    float mouse_sens;
-};
+#define STB_IMAGE_IMPLEMENTATION
+#include <external/stb_image.h> // Doesnt use it but implements it here
 
 static struct ui_renderer gr_ui_b = {0};
-static struct ui_renderer* gr_ui = &gr_ui_b;
+struct ui_renderer* gr_ui = &gr_ui_b;
 
 static struct renderer_3d gr_3d_b = {0};
-static struct renderer_3d* gr_3d = &gr_3d_b;
+struct renderer_3d* gr_3d = &gr_3d_b;
 
 static struct scene_cam gscene_cam = {0};
 
@@ -233,17 +72,6 @@ static PX_Transform3 combine_transform3(PX_Transform3 parent, PX_Transform3 loca
     out.pos.z = parent.pos.z + lp[2];
 
     return out;
-}
-
-static void update_cam_vectors(void) {
-    vec3 front;
-
-    front[0] = cos(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
-    front[1] = sin(glm_rad(gscene_cam.pitch));
-    front[2] = sin(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
-
-    glm_normalize(front);
-    glm_vec3_add(gscene_cam.position, front, gscene_cam.target);
 }
 
 static char* read_shader(const char* name) {
@@ -394,7 +222,7 @@ static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thic
     gr_ui->vertex_count += 4;
 }
 
-static void push_batch(struct ui_batch* b) {
+void px_rs_internal_push_batch_ui(struct ui_batch* b) {
     if (gr_ui->batch_count > 0) {
         struct ui_batch* last_b = &gr_ui->batches[gr_ui->batch_count - 1];
 
@@ -448,7 +276,7 @@ static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct ba
         if (gr_3d->index_count + 4 >= gr_3d->index_capacity)
             break;
 
-        uint16_t base = (uint16_t)gr_3d->vertex_count;
+        uint32_t base = (uint32_t)gr_3d->vertex_count;
 
         float p = i * spacing;
 
@@ -457,7 +285,7 @@ static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct ba
 
         struct vertex_3d v0 = {
             .x = x,
-            .y = 0.0f,
+            .y = -0.1f,
             .z = cam_z - extent
         };
 
@@ -495,7 +323,45 @@ static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct ba
     b->index_count = gr_3d->index_count - b->index_offset;
 }
 
-static void push_batch_3d(struct batch_3d* b) {
+static void push_3d_line(PX_Color4 color, PX_Transform3 transform_start, PX_Vector3 endpos, struct batch_3d* batch) {
+    if (gr_3d->vertex_count + 2 >= gr_3d->vertex_capacity)
+        return;
+
+    if (gr_3d->index_count + 2 >= gr_3d->index_capacity)
+        return;
+
+    size_t base = gr_3d->vertex_count;
+
+    struct vertex_3d v0 = {
+        .x = transform_start.pos.x,
+        .y = transform_start.pos.y,
+        .z = transform_start.pos.z
+    };
+
+    struct vertex_3d v1 = {
+        .x = endpos.x,
+        .y = endpos.y,
+        .z = endpos.z
+    };
+
+    gr_3d->vertices[gr_3d->vertex_count++] = v0;
+    gr_3d->vertices[gr_3d->vertex_count++] = v1;
+
+    size_t ibase = gr_3d->index_count;
+
+    gr_3d->indices[gr_3d->index_count++] = base + 0;
+    gr_3d->indices[gr_3d->index_count++] = base + 1;
+
+    batch->type = BATCH_3D_LINES;
+    batch->vertex_offset = base;
+    batch->index_offset = ibase;
+    batch->vertex_count = 2;
+    batch->index_count = 2;
+    batch->color = color;
+    batch->transform = transform_start;
+}
+
+void px_rs_internal_push_batch_3d(struct batch_3d* b) {
     if (gr_3d->batch_count >= MAX_BATCHES)
         return;
 
@@ -663,13 +529,6 @@ t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     glBindBuffer(GL_ARRAY_BUFFER, gr_3d->vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_3d->ebo);
 
-    unsigned short indices[MAX_VERTEX_COUNT / 4 * 6];
-    for (int i = 0, v = 0; i < (MAX_VERTEX_COUNT / 4 * 6); i += 6, v += 4) {
-        indices[i + 0] = v + 0; indices[i + 1] = v + 1; indices[i + 2] = v + 2;
-        indices[i + 3] = v + 2; indices[i + 4] = v + 3; indices[i + 5] = v + 0;
-    }
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
     gr_3d->vertex_capacity = MAX_VERTEX_COUNT;
     gr_3d->vertices = (struct vertex_3d*)malloc(sizeof(struct vertex_3d) * gr_3d->vertex_capacity);
     if (!gr_3d->vertices) {
@@ -677,7 +536,7 @@ t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     }
 
     gr_3d->index_capacity = MAX_3D_INDICES;
-    gr_3d->indices = (uint16_t*)malloc(sizeof(uint16_t) * gr_3d->index_capacity);
+    gr_3d->indices = (uint32_t*)malloc(sizeof(uint32_t) * gr_3d->index_capacity);
     if (!gr_3d->indices) {
         free(gr_3d->vertices);
         return ERR_ALLOC_FAILED;
@@ -864,7 +723,7 @@ void px_rs_3d_frame_end(void) {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_3d->ebo);
     glBufferData(
         GL_ELEMENT_ARRAY_BUFFER,
-        sizeof(uint16_t) * gr_3d->index_count,
+        sizeof(uint32_t) * gr_3d->index_count,
         gr_3d->indices,
         GL_DYNAMIC_DRAW
     );
@@ -930,8 +789,6 @@ void px_rs_3d_frame_end(void) {
 
         switch (b->type) {
             case BATCH_3D_SIMPLE: {
-                glEnable(GL_DEPTH_TEST);
-                glDepthFunc(GL_LEQUAL);
                 glUniformMatrix4fv(gr_3d->uni_projection, 1, GL_FALSE, (float*)proj);
                 glUniformMatrix4fv(gr_3d->uni_view, 1, GL_FALSE, (float*)view);
                 glUniformMatrix4fv(gr_3d->uni_model, 1, GL_FALSE, (float*)model);
@@ -948,7 +805,6 @@ void px_rs_3d_frame_end(void) {
                 break;
             }
             case BATCH_3D_LINES: {
-                glDisable(GL_DEPTH_TEST);
                 glUniformMatrix4fv(gr_3d->uni_projection, 1, GL_FALSE, (float*)proj);
                 glUniformMatrix4fv(gr_3d->uni_view, 1, GL_FALSE, (float*)view);
                 glUniformMatrix4fv(gr_3d->uni_model, 1, GL_FALSE, (float*)model);
@@ -983,8 +839,8 @@ void px_rs_3d_frame_end(void) {
         glDrawElements(
             mode,
             b->index_count,
-            GL_UNSIGNED_SHORT,
-            (void*)(b->index_offset * sizeof(uint16_t))
+            GL_UNSIGNED_INT,
+            (void*)(b->index_offset * sizeof(uint32_t))
         );
 
         glDisableVertexAttribArray(attr_pos);
@@ -1019,7 +875,7 @@ t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, f
     b.vertex_count = vertex_count;
     b.vertex_offset = start_vertex;
 
-    push_batch(&b);
+    px_rs_internal_push_batch_ui(&b);
 
     return ERR_SUCCESS;
 }
@@ -1082,7 +938,7 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 p
     b.vertex_count = vertex_count;
     b.vertex_offset = start_vertex;
 
-    push_batch(&b);
+    px_rs_internal_push_batch_ui(&b);
 
     return ERR_SUCCESS;
 }
@@ -1102,7 +958,7 @@ t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, P
     b.vertex_offset = start_vertex;
     b.vertex_count = vertex_count;
 
-    push_batch(&b);
+    px_rs_internal_push_batch_ui(&b);
     return ERR_SUCCESS;
 }
 
@@ -1158,6 +1014,7 @@ void px_rs_3d_frame_update(void) {
     glViewport(gr_3d->screen_x, gr_3d->screen_y, gr_3d->screen_w, gr_3d->screen_h);
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
@@ -1168,7 +1025,7 @@ void px_rs_3d_frame_update(void) {
 
 void px_rs_frame_update(void) {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void px_rs_ui_resize(PX_Scale2 screen_scale) {
@@ -1204,8 +1061,7 @@ void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key) {
 
     float speed = gscene_cam.move_speed;
 
-    switch (key)
-    {
+    switch (key) {
         case EKeycode_W:
             glm_vec3_muladds(forward, speed, gscene_cam.position);
             break;
@@ -1226,7 +1082,7 @@ void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key) {
             gscene_cam.position[1] += speed;
             break;
 
-        case EKeycode_LShift:
+        case EKeycode_LControl:
             gscene_cam.position[1] -= speed;
             break;
 
@@ -1235,10 +1091,15 @@ void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key) {
     }
 }
 
+void px_rs_config_scene_cam(float mouse_sensitivity, float speed) {
+    if (mouse_sensitivity > 0.0f) gscene_cam.mouse_sens = mouse_sensitivity;
+    if (speed > 0.0f) gscene_cam.move_speed = speed;
+}
+
 t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
-    struct batch_3d batch = {0};
-    int pushed = 0;
     for (int i = 0; i < scene->editor_object_count; i++) {
+        struct batch_3d batch = {0};
+
         PX_3D_Editor_Object* obj = &scene->editor_objects[i];
         PX_Transform3 localT = obj->local_transform;
         PX_Transform3 worldT = obj->world_transform;
@@ -1250,10 +1111,60 @@ t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
                 push_3d_grid(obj->ex_data, worldT, &batch);
                 break;
             }
+            case OBJECT_3D_EDITOR_GIZMO: {
+                PX_Vector3 GXep = (PX_Vector3){finalT.pos.x + 5, finalT.pos.y, finalT.pos.z};
+                PX_Vector3 GYep = (PX_Vector3){finalT.pos.x, finalT.pos.y + 5, finalT.pos.z};
+                PX_Vector3 GZep = (PX_Vector3){finalT.pos.x, finalT.pos.y, finalT.pos.z + 5};
+                push_3d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, finalT, GXep, &batch);
+                push_3d_line((PX_Color4){0x00,0xFF,0x0,0xFF}, finalT, GYep, &batch);
+                push_3d_line((PX_Color4){0x00,0x0,0xFF,0xFF}, finalT, GZep, &batch);
+                break;
+            }
             default: continue;
         }
-        pushed++;
+        px_rs_internal_push_batch_3d(&batch);
     }
-    if (pushed > 0) push_batch_3d(&batch);
     return ERR_SUCCESS;
 }
+
+t_err_codes px_rs_draw_scene(PX_Scene* scene) {
+    for (int i = 0; i < scene->object_count; i++) {
+        PX_3D_Object* obj = &scene->objects[i];
+        PX_Transform3 localT = obj->local_transform;
+        PX_Transform3 worldT = obj->world_transform;
+        PX_Transform3 finalT = combine_transform3(worldT, localT);
+
+        struct batch_3d batch = {0};
+
+        switch (obj->type){
+            case OBJECT_3D_TYPE_MESH: {
+                if (!obj->ex_data) continue;
+                struct batch_3d* b = (struct batch_3d*)obj->ex_data;
+                if (gr_3d->vertex_count + b->vertex_count > gr_3d->vertex_capacity) continue; // Skip, too large
+                if (gr_3d->index_count + b->index_count > gr_3d->index_capacity) continue; // Skip, too large
+
+                memcpy(&batch, b, sizeof(struct batch_3d));
+
+                batch.vertices = NULL;
+                batch.indices = NULL;
+                batch.transform = finalT;
+
+                batch.vertex_offset = gr_3d->vertex_count;
+                memcpy(&gr_3d->vertices[gr_3d->vertex_count], b->vertices, sizeof(struct vertex_3d) * b->vertex_count);
+                gr_3d->vertex_count += b->vertex_count;
+
+                batch.index_offset = gr_3d->index_count;
+                for (uint32_t j = 0; j < b->index_count; j++) {
+                    gr_3d->indices[gr_3d->index_count + j] =  b->indices[j] + batch.vertex_offset;
+                }
+                gr_3d->index_count += b->index_count;
+
+                break;
+            }
+            default: continue;
+        }
+        px_rs_internal_push_batch_3d(&batch);
+    }
+    return ERR_SUCCESS;
+}
+

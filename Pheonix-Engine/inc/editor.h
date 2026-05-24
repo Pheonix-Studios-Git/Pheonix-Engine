@@ -7,37 +7,6 @@
 
 #define PX_EDITOR_CUR_VERSION 1.0f
 
-typedef enum {
-    PX_EditorComponentType_NONE,
-    PX_EditorComponentType_UNKNOWN,
-    PX_EditorComponentType_SCRIPT
-} PX_EditorComponentType;
-
-typedef struct {
-    char* name;
-    PX_EditorComponentType type;
-} PX_EditorComponent;
-
-typedef struct {
-    bool used;
-    char* name;
-} PX_EditorMaterial;
-
-typedef struct PX_EditorObject {
-    struct PX_EditorObject* parent;
-    struct PX_EditorObject* child;
-    struct PX_EditorObject* next;
-
-    int child_count;
-
-    char* name;
-    
-    PX_Transform3 transform;
-    PX_EditorMaterial material;
-    PX_EditorComponent* components;
-    int component_count;
-} PX_EditorObject;
-
 typedef struct {
     bool initialized;
     float opengl_version; // Default = 4.0, Fallback = 2.0
@@ -47,8 +16,7 @@ typedef struct {
     char* project_dir;
     char* project_name;
 
-    PX_EditorObject* objects;
-    int total_object_count;
+    PX_Scene* scene;
 } PX_EditorState;
 
 #pragma pack(push, 1)
@@ -89,5 +57,5 @@ typedef struct {
 
 t_err_codes editor_new_project(char* proj_name);
 PX_EditorState* editor_get_state(void);
-bool editor_add_object(PX_EditorObject* parent, PX_EditorObject* obj);
-void editor_draw_scene_panel(PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
+void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
+void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font* font, float font_size, int xspacing, int yspacing);

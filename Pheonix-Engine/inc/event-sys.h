@@ -6,6 +6,7 @@
 typedef enum {
     EVENT_GSIGNAL_UNKNOWN = 0,
     EVENT_GSIGNAL_UI_DROPDOWN_CLICK,
+    EVENT_GSIGNAL_UI_SCENE_PANEL_CLICK,
     EVENT_GSIGNAL_CORE_QUIT
 } PX_Event_GSignals;
 
@@ -16,9 +17,15 @@ typedef struct {
 } PX_Event_GSignal_UIDropdownClick;
 
 typedef struct {
+    PX_3D_Object* obj;
+    char* clicked_name;
+} PX_Event_GSignal_UIScenePanelClick;
+
+typedef struct {
     PX_Event_GSignals type;
     union {
         PX_Event_GSignal_UIDropdownClick ui_dropdown_click;
+        PX_Event_GSignal_UIScenePanelClick ui_scenepanel_click;
         bool core_quit;
     };
 } PX_Event_GSignal;

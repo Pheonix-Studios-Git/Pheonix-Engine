@@ -1,8 +1,10 @@
 #include <stdbool.h>
 
+#include <pheonix-engine.h>
 #include <window-sys.h>
 #include <event-sys.h>
 #include <rendering-sys.h>
+#include <rendering-sys/loader.h>
 #include <editor.h>
 #include <event-sys/menu-events.h>
 
@@ -10,6 +12,9 @@
 
 static char* save_path = NULL;
 static PX_Dropdown* menu_dropdown = NULL;
+
+static size_t loads[PX_RS_MAX_OBJECTS_PER_SCENE] = {0};
+static size_t load_ptr = 0;
 
 // FILE Options
 static void handle_file_new(void) {
@@ -24,12 +29,28 @@ static void handle_file_save(void) {
 static void handle_file_save_as(void) {
 
 }
+static void handle_file_import(void) {
+    char* file = px_ws_open_file_selector_dialog();
+    if (!file) return;
+    size_t id = px_rs_loader_load_file(&engine_3drenderer_main_scene, file);
+    if (id != 0) {
+        loads[load_ptr++] = id-1;
+    }
+}
 static void handle_file_quit(void) {
     PX_Event_GSignal signal = {0};
     signal.type = EVENT_GSIGNAL_CORE_QUIT;
     signal.core_quit = true;
 
     event_send_gsignal(&signal);
+
+    // Cleanup
+    for (size_t i = 0; i < load_ptr; i++) {
+        PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
+        if (obj->type == OBJECT_3D_TYPE_MESH) {
+            px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
+        }
+    }
 }
 
 void menu_evs_init(PX_Dropdown* menu_dd, char* path_to_save) {
@@ -48,7 +69,8 @@ void menu_evs_handle_events(PX_Event_GSignal* signal) {
                         case 1: handle_file_open(); break;
                         case 2: handle_file_save(); break;
                         case 3: handle_file_save_as(); break;
-                        case 4: handle_file_quit(); break;
+                        case 4: handle_file_import(); break;
+                        case 5: handle_file_quit(); break;
                         default: return;
                     }
                     break;

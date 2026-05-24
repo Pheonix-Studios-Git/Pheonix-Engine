@@ -55,14 +55,23 @@ WARN := -Wall -Wextra -Wpedantic -Wstrict-prototypes
 DEFS :=
 INCS := -I$(INC_DIR)
 
-COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS)
-LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender
+OPT_LEVEL ?= 0
+TARGET_CPU ?= generic
+
+CPU_FLAGS :=
+
+ifneq ($(TARGET_CPU),generic)
+    CPU_FLAGS += -march=$(TARGET_CPU) -mtune=$(TARGET_CPU)
+endif
+
+COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS)
+LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp
 
 ifeq ($(MODE),debug)
-    CFLAGS := $(COMMON_CFLAGS) -g -O0 -fno-omit-frame-pointer
+    CFLAGS := $(COMMON_CFLAGS) -g -fno-omit-frame-pointer
 else ifeq ($(MODE),release)
     # IMPORTANT Note: intentionally unoptimized
-    CFLAGS := $(COMMON_CFLAGS) -O0 -DNDEBUG
+    CFLAGS := $(COMMON_CFLAGS) -DNDEBUG
 else
     $(error Unknown MODE '$(MODE)'. Use MODE=debug or MODE=release)
 endif
