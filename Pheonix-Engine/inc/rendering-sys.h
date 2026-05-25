@@ -117,6 +117,11 @@ typedef enum {
     OBJECT_3D_TYPE_EMPTY
 } PX_3D_Object_Type;
 
+/*
+ExData field
+
+1. Type - Mesh -> Batch_3D structure
+*/
 typedef struct PX_3D_Object {
     char* name;
     bool active;
@@ -139,10 +144,17 @@ typedef enum {
     OBJECT_3D_EDITOR_GIZMO
 } PX_3D_Editor_Object_Type;
 
+/*
+ExData field
+
+1. Type - Grid -> PX_EditorGrid structure
+2. Type - Gizmo -> bool pointer to define hover
+*/
 typedef struct PX_3D_Editor_Object {
     char* name;
     bool active;
     PX_3D_Editor_Object_Type type;
+    uint16_t id;
 
     bool static_object;
 
@@ -217,3 +229,4 @@ t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, P
 t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd);
 t_err_codes px_rs_draw_editor_objects(PX_Scene* scene);
 t_err_codes px_rs_draw_scene(PX_Scene* scene);
+void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale);

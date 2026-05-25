@@ -66,14 +66,22 @@ struct ui_batch {
 
 struct batch_3d {
     enum batch_3d_type type;
+    GLuint fbo;
+    bool switch_fbo;
+
+    bool pure_color;
+
+    float line_width;
 
     int vertex_offset;
-    int vertex_count;
+    size_t vertex_count;
     struct vertex_3d* vertices;
 
     int index_offset;
-    int index_count;
+    size_t index_count;
     uint32_t* indices;
+
+    bool depth_override;
 
     PX_Transform3 transform;
     PX_Color4 color;
@@ -113,11 +121,11 @@ struct ui_renderer {
     GLuint blank_tex;
 
     struct ui_vertex* vertices;
-    int vertex_count;
-    int vertex_capacity;
+    size_t vertex_count;
+    size_t vertex_capacity;
 
     struct ui_batch batches[MAX_BATCHES];
-    int batch_count;
+    size_t batch_count;
 
     int screen_w;
     int screen_h;
@@ -159,6 +167,10 @@ struct renderer_3d {
     int screen_h;
     int screen_x;
     int screen_y;
+
+    GLuint flatFBO;
+    GLuint flatColorTex;
+    GLuint flatDepthRBO;
 };
 
 struct scene_cam {

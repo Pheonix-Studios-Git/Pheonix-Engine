@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <pheonix-engine.h>
 #include <err-codes.h>
@@ -41,7 +42,8 @@ static PX_Window engine_window_main = (PX_Window){
     .width = 1000,
     .height = 800,
     .title = "Pheonix Engine",
-    .handle = -1
+    .handle = -1,
+    .vsync_off = false
 };
 // Fonts
 static PX_Font* engine_font_ui = NULL;
@@ -67,10 +69,12 @@ static PX_EditorGrid engine_3drenderer_editor_grid = {
     .color = (PX_Color4){0x24, 0x24, 0x24, 0xFF},
     .spacing = 5.0f
 };
+static size_t engine_3drenderer_gizmo_idx;
 // 3D Renderer
 PX_Scene engine_3drenderer_main_scene = {0};
 static float engine_3drenderer_scene_cam_speed = 1.0f;
 static bool engine_3drenderer_scene_cam_speed_doubled = false;
+static bool engine_3drenderer_hover_on_gizmo = false;
 
 // Anchors
 static PX_AnchorRect engine_anchor_menubar = {
@@ -278,6 +282,16 @@ static void enginef_core_render(void) {
     engine_menu_dropdown.height = menubar_t.scale.h;
     engine_menu_dropdown.pos = menubar_t.pos;
     px_rs_draw_dropdown(&engine_menu_dropdown);
+
+    // Gizmos
+    if (engine_3drenderer_main_scene.active_object != NULL) {
+        if (engine_3drenderer_gizmo_idx > 0 && engine_3drenderer_gizmo_idx < engine_3drenderer_main_scene.editor_object_count) {
+            PX_3D_Editor_Object* gizmo = &engine_3drenderer_main_scene.editor_objects[engine_3drenderer_gizmo_idx];
+            gizmo->local_transform = engine_3drenderer_main_scene.active_object->local_transform;
+            gizmo->world_transform = engine_3drenderer_main_scene.active_object->world_transform;
+            gizmo->active = true;
+        }
+    }
 }
 
 static void enginef_core_handle_core_signals(PX_Event_GSignal* core_signal, bool core_signal_active) {
@@ -291,6 +305,25 @@ static void enginef_core_handle_core_signals(PX_Event_GSignal* core_signal, bool
     }
 }
 
+static void enginef_core_handle_gsignals(PX_Event_GSignal* signal, bool core_signal_active) {
+    if (!signal || core_signal_active) return;
+
+    switch (signal->type) {
+        case EVENT_GSIGNAL_3D_HOVER: {
+            PX_Event_GSignal_3dHover s = signal->mouse_hover_on_3d;
+            switch (s.id) {
+                case 1: {
+                    if (s.objType != OBJECT_3D_EDITOR_GIZMO) break;
+                    engine_3drenderer_hover_on_gizmo = true;
+                    break;
+                }
+                default: break;
+            }
+        }
+        default: break;
+    }
+}
+
 static void enginef_init_3drenderer_main_scene(void) {
     PX_3D_Editor_Object gridlines = {
         .active = true,
@@ -298,24 +331,34 @@ static void enginef_init_3drenderer_main_scene(void) {
         .type = OBJECT_3D_EDITOR_GRID,
         .has_children = false,
         .static_object = true,
-        .local_transform = (PX_Transform3){.rot.w = 1},
+        .local_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .world_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .ex_data_type = OBJECT_3D_EDITOR_GRID,
-        .ex_data = &engine_3drenderer_editor_grid
+        .ex_data = &engine_3drenderer_editor_grid,
+        .id = 0
     };
     engine_3drenderer_main_scene.editor_objects[engine_3drenderer_main_scene.editor_object_count++] = gridlines;
     PX_3D_Editor_Object gizmo = {
-        .active = true,
+        .active = false,
         .name = "Test Gizmo",
         .type = OBJECT_3D_EDITOR_GIZMO,
         .has_children = false,
         .static_object = true,
-        .local_transform = (PX_Transform3){.rot.w = 1},
+        .local_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .world_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .ex_data_type = OBJECT_3D_EDITOR_GIZMO,
-        .ex_data = NULL
+        .ex_data = &engine_3drenderer_hover_on_gizmo,
+        .id = 1
     };
+    engine_3drenderer_gizmo_idx = engine_3drenderer_main_scene.editor_object_count;
     engine_3drenderer_main_scene.editor_objects[engine_3drenderer_main_scene.editor_object_count++] = gizmo;
+}
+
+static double enginef_core_get_time() {
+    time_t ts;
+    time(&ts);
+
+    return (double)ts;
 }
 
 int main(int argc, char** argv) {
@@ -422,16 +465,47 @@ int main(int argc, char** argv) {
     // Configure Scene Cam
     px_rs_config_scene_cam(-1.0f, engine_3drenderer_scene_cam_speed);
 
+    // Frame stuff
+    double last_time = enginef_core_get_time();
+    double fps_timer = 0.0;
+    int frames = 0;
+
     // Render
     engine_running = true;
+    printf("\n");
     while (engine_running) {
+        double current_time = enginef_core_get_time();
+        double delta_time = current_time - last_time;
+        last_time = current_time;
+
+        fps_timer += delta_time;
+        frames++;
+
+        if (fps_timer >= 0.1) {
+            double fps = frames / fps_timer;
+
+            printf("\rFPS: %.2f", fps);
+            fflush(stdout);
+
+            frames = 0;
+            fps_timer = 0.0;
+        }
+
+        engine_3drenderer_hover_on_gizmo = false;
+
         px_rs_frame_start();
         px_rs_frame_update();
 
-        px_rs_draw_editor_objects(&engine_3drenderer_main_scene);
+        // Draw 3D
+        px_rs_3d_frame_update();
         px_rs_draw_scene(&engine_3drenderer_main_scene);
+        px_rs_draw_editor_objects(&engine_3drenderer_main_scene);
         
+        // Draw 2D
+        px_rs_ui_frame_update();
         enginef_core_render();
+
+        px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, (PX_Scale2){engine_window_main_w, engine_window_main_h});
         enginef_event_hover_check();
 
         // Global Signals
@@ -440,6 +514,8 @@ int main(int argc, char** argv) {
         event_handle_gsignals((PX_Event_Identifier**)&engine_obj_identifiers_x, engine_obj_identifier_count, &core_signal, &core_signal_active);
         // Global Core Signals
         enginef_core_handle_core_signals(&core_signal, core_signal_active);
+        // Global checks
+        enginef_core_handle_gsignals(&core_signal, core_signal_active);
 
         last_err = px_ws_poll(&engine_window_main);
         if (last_err != ERR_SUCCESS) {
@@ -566,6 +642,7 @@ int main(int argc, char** argv) {
         px_rs_frame_end();
         px_ws_swap_buffers(&engine_window_main);
     }
+    printf("\n");
 
     if (engine_mouse_locked) {
         px_ws_set_mouse_locked(&engine_window_main, false);

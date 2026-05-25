@@ -166,6 +166,14 @@ static Display* g_display = NULL;
 static int g_screen = 0;
 static int g_handle = 0;
 
+static int is_ext_supported(Display *dpy, int screen, const char *extName) {
+    const char *exts = glXQueryExtensionsString(dpy, screen);
+    if (exts) {
+        return (strstr(exts, extName) != NULL);
+    }
+    return 0;
+}
+
 static int append_window(struct window* win) {
     struct winarray* node = (struct winarray*)malloc(sizeof(struct winarray));
     if (!node)
@@ -710,6 +718,17 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
     iwin->gl_ctx_valid = true;
     iwin->gl_ctx = gl_ctx;
     glXMakeCurrent(iwin->display, iwin->window, gl_ctx);
+
+    if (is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control")) {
+        PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = (PFNGLXSWAPINTERVALEXTPROC)glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
+
+        if (glXSwapIntervalEXT != NULL) {
+            if (win->vsync_off)
+                glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), 0);
+            else
+                glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), 1);
+        }
+    }
 
     XFree(visual);
 

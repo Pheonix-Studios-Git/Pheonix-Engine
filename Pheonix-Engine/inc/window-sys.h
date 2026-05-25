@@ -40,6 +40,7 @@ typedef struct {
     unsigned int flags;
     int handle;
     PX_WE_Queue queue;
+    bool vsync_off;
 } PX_Window;
 
 typedef struct {
