@@ -67,6 +67,10 @@ struct ui_batch {
 struct batch_3d {
     enum batch_3d_type type;
     GLuint fbo;
+    int fbo_x;
+    int fbo_y;
+    int fbo_w;
+    int fbo_h;
     bool switch_fbo;
 
     bool pure_color;

@@ -833,7 +833,8 @@ void px_rs_3d_frame_end(void) {
     glLineWidth(oldWidth);
     
     bool depth_enabled = true;
-    GLuint curFBO = gr_3d->flatFBO;
+    GLuint curFBO = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&curFBO);
     bool pure_color_enabled = false;
 
     for (size_t i = 0; i < gr_3d->batch_count; i++) {
@@ -887,9 +888,11 @@ void px_rs_3d_frame_end(void) {
 
         if (b->switch_fbo && curFBO != b->fbo) {
             glBindFramebuffer(GL_FRAMEBUFFER, b->fbo);
+            glViewport(b->fbo_x, b->fbo_y, b->fbo_w, b->fbo_h);
             curFBO = b->fbo;
         } else if (!b->switch_fbo && curFBO != 0) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(gr_3d->screen_x, gr_3d->screen_y, gr_3d->screen_w, gr_3d->screen_h);
             curFBO = 0;
         }
 
@@ -1138,8 +1141,8 @@ void px_rs_3d_frame_update(void) {
     if (!gr_3d->initialized)
         return;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(gr_3d->screen_x, gr_3d->screen_y, gr_3d->screen_w, gr_3d->screen_h);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_MULTISAMPLE);
@@ -1153,7 +1156,6 @@ void px_rs_3d_frame_update(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, gr_3d->flatFBO);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glViewport(gr_3d->screen_x, gr_3d->screen_y, gr_3d->screen_w, gr_3d->screen_h);
 }
 
 void px_rs_frame_update(void) {
@@ -1174,9 +1176,6 @@ void px_rs_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     gr_3d->screen_x = screen_pos.x;
     gr_3d->screen_y = screen_pos.y;
     glViewport(screen_pos.x, screen_pos.y, screen_scale.w, screen_scale.h);
-    glBindFramebuffer(GL_FRAMEBUFFER, gr_3d->flatFBO);
-    glViewport(screen_pos.x, screen_pos.y, screen_scale.w, screen_scale.h);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key) {
@@ -1281,23 +1280,36 @@ t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
                     .g = obj->id & 0xFF,
                     .b = (uint8_t)obj->type
                 };
-                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0x10}, finalT, GXep, 2.0f, &batch);
+                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GXep, 4.0f, &batch);
                 batch.depth_override = true;
                 batch.fbo = gr_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = gr_3d->screen_w;
+                batch.fbo_h = gr_3d->screen_h;
                 px_rs_internal_push_batch_3d(&batch);
-                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0x20}, finalT, GYep, 2.0f, &batch);
+                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GYep, 4.0f, &batch);
                 batch.depth_override = true;
                 batch.fbo = gr_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = gr_3d->screen_w;
+                batch.fbo_h = gr_3d->screen_h;
                 px_rs_internal_push_batch_3d(&batch);
-                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0x30}, finalT, GZep, 2.0f, &batch);
+                push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GZep, 4.0f, &batch);
                 batch.depth_override = true;
                 batch.fbo = gr_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = gr_3d->screen_w;
+                batch.fbo_h = gr_3d->screen_h;
+                // Outer loop will push this
                 break;
             }
             default: continue;
@@ -1360,8 +1372,8 @@ void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     if (
         local_x < 0 ||
         local_y < 0 ||
-        local_x >= gr_3d->screen_w ||
-        local_y >= gr_3d->screen_h
+        local_x >= screen_scale.w ||
+        local_y >= screen_scale.h
     ) {
         return;
     }
@@ -1369,6 +1381,7 @@ void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     uint8_t pixel[4];
 
     glBindFramebuffer(GL_FRAMEBUFFER, gr_3d->flatFBO);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
     glReadPixels(
         local_x,
         local_y,
@@ -1383,6 +1396,7 @@ void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     uint16_t id = (pixel[0] << 8) | pixel[1];
     uint8_t objType = pixel[2];
     uint8_t subId = pixel[3];
+
     if (subId <= 0) return; // Nothing there
 
     PX_Event_GSignal event = {
