@@ -433,8 +433,8 @@ t_err_codes px_rs_init_ui(PX_Scale2 screen_scale) {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -521,8 +521,8 @@ t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -889,6 +889,8 @@ void px_rs_3d_frame_end(void) {
         if (b->switch_fbo && curFBO != b->fbo) {
             glBindFramebuffer(GL_FRAMEBUFFER, b->fbo);
             glViewport(b->fbo_x, b->fbo_y, b->fbo_w, b->fbo_h);
+			GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+    		glDrawBuffers(1, &drawBuf);
             curFBO = b->fbo;
         } else if (!b->switch_fbo && curFBO != 0) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -984,6 +986,7 @@ void px_rs_3d_frame_end(void) {
 void px_rs_frame_end(void) {
     px_rs_3d_frame_update();
     px_rs_3d_frame_end();
+
     px_rs_ui_frame_update();
     px_rs_ui_frame_end();
 }
@@ -1162,6 +1165,11 @@ void px_rs_frame_update(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	GLenum err = glGetError();
+	if (err != GL_NO_ERROR) {
+		printf("Got GL Error (Caught on Frame Update): %02X\n", err);
+	}
 }
 
 void px_rs_ui_resize(PX_Scale2 screen_scale) {
@@ -1249,6 +1257,7 @@ t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
             case OBJECT_3D_EDITOR_GRID: {
                 if (!obj->ex_data) continue;
                 push_3d_grid(obj->ex_data, worldT, &batch);
+				px_rs_internal_push_batch_3d(&batch);
                 break;
             }
             case OBJECT_3D_EDITOR_GIZMO: {
@@ -1276,9 +1285,9 @@ t_err_codes px_rs_draw_editor_objects(PX_Scene* scene) {
                 
                 // Picker
                 PX_Color3 main_color = {
-                    .r = (obj->id >> 8) & 0xFF,
-                    .g = obj->id & 0xFF,
-                    .b = (uint8_t)obj->type
+                    .r = 0xFF, //obj->id & 0xFF,
+                    .g = (obj->id >> 8) & 0xFF,
+                    .b = obj->type
                 };
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GXep, 4.0f, &batch);
                 batch.depth_override = true;
@@ -1366,21 +1375,22 @@ t_err_codes px_rs_draw_scene(PX_Scene* scene) {
 
 void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     int local_x = mpos.x - gr_3d->screen_x;
-    int local_y = mpos.y - gr_3d->screen_y;
-    local_y = gr_3d->screen_h - local_y - 1;
+	int local_y = mpos.y - gr_3d->screen_y;
 
-    if (
-        local_x < 0 ||
-        local_y < 0 ||
-        local_x >= screen_scale.w ||
-        local_y >= screen_scale.h
-    ) {
-        return;
-    }
+	if (
+		local_x < 0 ||
+		local_y < 0 ||
+		local_x >= gr_3d->screen_w ||
+		local_y >= gr_3d->screen_h
+	) {
+		return;
+	}
+
+	local_y = gr_3d->screen_h - local_y - 1;
 
     uint8_t pixel[4];
 
-    glBindFramebuffer(GL_FRAMEBUFFER, gr_3d->flatFBO);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, gr_3d->flatFBO);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glReadPixels(
         local_x,
@@ -1391,9 +1401,8 @@ void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
         GL_UNSIGNED_BYTE,
         pixel
     );
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    uint16_t id = (pixel[0] << 8) | pixel[1];
+    uint16_t id = (pixel[1] << 8) | pixel[0];
     uint8_t objType = pixel[2];
     uint8_t subId = pixel[3];
 

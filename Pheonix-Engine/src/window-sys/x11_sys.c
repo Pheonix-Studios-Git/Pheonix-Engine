@@ -758,7 +758,10 @@ static char* x11_open_file_selector_dialog(void) {
 }
 
 static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
+	if (!win || win->handle < 0)
+        return ERR_INTERNAL;
     struct window* iwin = get_window(win->handle);
+	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
     if (locked) {
         Pixmap blank;
         XColor dummy;
@@ -781,9 +784,36 @@ static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
 }
 
 static t_err_codes x11_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
+	if (!win || win->handle < 0)
+        return ERR_INTERNAL;
     struct window* iwin = get_window(win->handle);
+	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
     XWarpPointer(iwin->display, None, iwin->window, 0, 0, 0, 0, pos.x, pos.y);
     return ERR_SUCCESS;
+}
+
+static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
+	if (!win || win->handle < 0)
+        return ERR_INTERNAL;
+	struct window* iwin = get_window(win->handle);
+	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
+
+	XEvent xev;
+	Atom wm_state = XInternAtom(iwin->display, "_NET_WM_STATE", False);
+	Atom wm_fs = XInternAtom(iwin->display, "_NET_WM_STATE_FULLSCREEN", False);
+
+	memset(&xev, 0, sizeof(xev));
+    xev.type = ClientMessage;
+    xev.xclient.window = iwin->window;
+    xev.xclient.message_type = wm_state;
+    xev.xclient.format = 32;
+    xev.xclient.data.l[0] = enabled ? 1 : 0; 
+    xev.xclient.data.l[1] = wm_fs;
+    xev.xclient.data.l[2] = 0;
+
+    XSendEvent(iwin->display, DefaultRootWindow(iwin->display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+
+	return ERR_SUCCESS;
 }
 
 const t_px_ws_backend px_ws_backend_x11 = {
@@ -800,6 +830,7 @@ const t_px_ws_backend px_ws_backend_x11 = {
     .swap_buffers = x11_swap_buffers,
     .open_file_selector_dialog = x11_open_file_selector_dialog,
     .set_mouse_locked = x11_set_mouse_locked,
-    .set_mouse_pos = x11_set_mouse_pos
+    .set_mouse_pos = x11_set_mouse_pos,
+	.set_fullscreen = x11_set_fullscreen
 };
 

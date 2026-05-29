@@ -139,3 +139,12 @@ t_err_codes px_ws_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
 
     return g_backend->set_mouse_pos(win, pos);
 }
+
+t_err_codes px_ws_set_fullscreen(PX_Window* win, bool enabled) {
+    if (!g_backend)
+        return ERR_WS_UNINITIALIZED;
+    else if (!win)
+        return ERR_INTERNAL;
+
+    return g_backend->set_fullscreen(win, enabled);
+}

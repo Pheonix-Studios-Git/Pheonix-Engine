@@ -38,7 +38,7 @@ static PX_WindowDesign engine_window_main_design = (PX_WindowDesign){
     .title_text_color = 0x00000000
 };
 // Windows
-static PX_Window engine_window_main = (PX_Window){
+PX_Window engine_window_main = (PX_Window){
     .width = 1000,
     .height = 800,
     .title = "Pheonix Engine",
@@ -63,7 +63,7 @@ static PX_Event_Identifier engine_obj_identifiers[10];
 static PX_Event_Identifier* engine_obj_identifiers_x[10];
 static int engine_obj_identifier_count = 0;
 // Engine 3D Objects
-static PX_EditorGrid engine_3drenderer_editor_grid = {
+PX_EditorGrid engine_3drenderer_editor_grid = {
     .visible = true,
     .half_size = 100,
     .color = (PX_Color4){0x24, 0x24, 0x24, 0xFF},
@@ -324,7 +324,7 @@ static void enginef_core_handle_gsignals(PX_Event_GSignal* signal, bool core_sig
     }
 }
 
-static void enginef_init_3drenderer_main_scene(void) {
+void enginef_init_3drenderer_main_scene(void) {
     PX_3D_Editor_Object gridlines = {
         .active = true,
         .name = "Grid Lines",
@@ -457,7 +457,7 @@ int main(int argc, char** argv) {
     enginef_init_dropdowns();
     menu_evs_init(&engine_menu_dropdown, NULL);
     // Project
-    editor_new_project("Untitled");
+    editor_new_project(&engine_3drenderer_main_scene, "Untitled");
 
     // Load scene
     enginef_init_3drenderer_main_scene();
@@ -506,7 +506,7 @@ int main(int argc, char** argv) {
         enginef_core_render();
 
         px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, (PX_Scale2){engine_window_main_w, engine_window_main_h});
-        enginef_event_hover_check();
+		enginef_event_hover_check();
 
         // Global Signals
         PX_Event_GSignal core_signal = {0};

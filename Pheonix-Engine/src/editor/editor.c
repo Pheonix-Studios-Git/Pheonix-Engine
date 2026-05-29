@@ -38,8 +38,13 @@ static t_err_codes editor_init_state(char* proj_name) {
     return ERR_SUCCESS;
 }
 
-t_err_codes editor_new_project(char* proj_name) {
-    return editor_init_state(proj_name);
+t_err_codes editor_new_project(PX_Scene* cScene, char* proj_name) {
+	if (!cScene) return editor_init_state(proj_name);
+	cScene->active_object = NULL;
+	cScene->bvh_node_count = 0;
+	cScene->editor_object_count = 0;
+	cScene->object_count = 0;
+	return editor_init_state(proj_name);
 }
 
 PX_EditorState* editor_get_state(void) {

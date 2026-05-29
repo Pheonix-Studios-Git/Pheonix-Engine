@@ -46,6 +46,8 @@ typedef struct px_ws_backend {
     char* (*open_file_selector_dialog)(void);
 
     t_err_codes (*set_mouse_locked)(PX_Window*, bool);
-    t_err_codes (*set_mouse_pos)(PX_Window*, PX_Vector2 pos);
+    t_err_codes (*set_mouse_pos)(PX_Window*, PX_Vector2);
+
+	t_err_codes (*set_fullscreen)(PX_Window*, bool);
 } t_px_ws_backend;
 

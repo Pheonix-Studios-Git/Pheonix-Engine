@@ -75,3 +75,5 @@ char* px_ws_open_file_selector_dialog(void);
 
 t_err_codes px_ws_set_mouse_locked(PX_Window* win, bool locked);
 t_err_codes px_ws_set_mouse_pos(PX_Window* win, PX_Vector2 pos);
+
+t_err_codes px_ws_set_fullscreen(PX_Window* win, bool enabled);

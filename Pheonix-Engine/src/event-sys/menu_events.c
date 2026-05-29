@@ -16,12 +16,22 @@ static PX_Dropdown* menu_dropdown = NULL;
 static size_t loads[PX_RS_MAX_OBJECTS_PER_SCENE] = {0};
 static size_t load_ptr = 0;
 
+static bool fullscreened = false;
+
 // FILE Options
 static void handle_file_new(void) {
-    editor_new_project("Untitled");
+	for (size_t i = 0; i < load_ptr; i++) {
+        PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
+        if (obj->type == OBJECT_3D_TYPE_MESH) {
+            px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
+        }
+    }
+	load_ptr = 0;
+    editor_new_project(&engine_3drenderer_main_scene, "Untitled");
+	enginef_init_3drenderer_main_scene();
 }
 static void handle_file_open(void) {
-    char* file = px_ws_open_file_selector_dialog();
+    (void)px_ws_open_file_selector_dialog();
 }
 static void handle_file_save(void) {
 
@@ -51,6 +61,14 @@ static void handle_file_quit(void) {
             px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
         }
     }
+	load_ptr = 0;
+}
+
+// VIEW Options
+static void handle_view_fullscreen(void) {
+	t_err_codes out = px_ws_set_fullscreen(&engine_window_main, !fullscreened);
+	if (out == ERR_SUCCESS)
+		fullscreened = !fullscreened;
 }
 
 void menu_evs_init(PX_Dropdown* menu_dd, char* path_to_save) {
@@ -74,8 +92,12 @@ void menu_evs_handle_events(PX_Event_GSignal* signal) {
                         default: return;
                     }
                     break;
-                case 1:
-                case 2:
+                case 1: return;
+                case 2: // VIEW
+					switch (signal->ui_dropdown_click.clicked_option) {
+						case 0: handle_view_fullscreen(); break;
+						default: return;
+					}
                 case 3:
                 default: return;
             }

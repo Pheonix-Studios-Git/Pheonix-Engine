@@ -55,7 +55,7 @@ typedef struct {
 } PX_PXProj_Hdr;
 #pragma pack(pop)
 
-t_err_codes editor_new_project(char* proj_name);
+t_err_codes editor_new_project(PX_Scene* cScene, char* proj_name);
 PX_EditorState* editor_get_state(void);
 void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
 void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font* font, float font_size, int xspacing, int yspacing);
