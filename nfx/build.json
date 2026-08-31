@@ -10,7 +10,7 @@
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
     "SignatureIdentity": "pheonix-pheonix-engine",
-    "Date": "2026-04-24 20:45"
+    "Date": "2026-05-25 20:56"
   },
   "Binaries": [
     {
@@ -22,8 +22,8 @@
         "x86_64"
       ],
       "Path": "Pheonix-Engine/bin/linux/x86_64/pheonix-engine",
-      "Size": 571680,
-      "Sha256": "871b0ea91911807d5e12c94723cf702d867dc44a152aa3fabd40c7e29fd5f5ad",
+      "Size": 1546064,
+      "Sha256": "2e89f64e10e14b63101face3589197667df9cb235aa0c0adaaf74d08a37fd663",
       "Executable": true
     }
   ],

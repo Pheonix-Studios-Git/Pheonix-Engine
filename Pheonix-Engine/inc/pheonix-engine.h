@@ -1,5 +1,8 @@
 #pragma once
 
+#define __PHEONIX_ENGINE__APPLICATION_NAME__ "Pheonix Engine"
+#define __PHEONIX_ENGINE__VERSION__ 0x0100
+
 #include <rendering-sys.h>
 #include <window-sys.h>
 

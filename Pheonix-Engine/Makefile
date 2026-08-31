@@ -46,9 +46,6 @@ endif
 OUT_DIR := $(BIN_DIR)/$(OS)/$(ARCH)
 TARGET := $(OUT_DIR)/$(PROJECT)
 
-# === Build Mode ===
-MODE ?= debug
-
 # === Flags ===
 CSTD := -std=c11
 WARN := -Wall -Wextra -Wpedantic -Wstrict-prototypes
@@ -65,33 +62,16 @@ ifneq ($(TARGET_CPU),generic)
 endif
 
 COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS)
-LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp
-
-ifeq ($(MODE),debug)
-    CFLAGS := $(COMMON_CFLAGS) -g -fno-omit-frame-pointer
-else ifeq ($(MODE),release)
-    # IMPORTANT Note: intentionally unoptimized
-    CFLAGS := $(COMMON_CFLAGS) -DNDEBUG
-else
-    $(error Unknown MODE '$(MODE)'. Use MODE=debug or MODE=release)
-endif
+LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp -ldl
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
 OBJ := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
 
 # === Rules ===
-.PHONY: all debug release clean help dirs
+.PHONY: all clean help dirs
 
-all: debug
-
-debug:
-	@$(MAKE) MODE=debug build
-
-release:
-	@$(MAKE) MODE=release build
-
-build: dirs $(TARGET)
+all: dirs $(TARGET)
 
 dirs:
 	@mkdir -p $(BUILD_DIR)

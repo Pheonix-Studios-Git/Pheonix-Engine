@@ -13,6 +13,12 @@
 
 #define PX_RS_MAX_OBJECTS_PER_SCENE 4096
 
+typedef enum {
+	GPU_BACKEND_OPENGL,
+	GPU_BACKEND_VULKAN
+} PX_GPU_Backend;
+#define __PHEONIX_ENGINE__RENDERING_SYS__DEFAULT_BACKEND__ GPU_BACKEND_OPENGL
+
 typedef struct {
     float m[16];
 } PX_Mat4;
@@ -230,3 +236,4 @@ t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd);
 t_err_codes px_rs_draw_editor_objects(PX_Scene* scene);
 t_err_codes px_rs_draw_scene(PX_Scene* scene);
 void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale);
+t_err_codes px_rs_change_backend(PX_GPU_Backend new_backend, PX_Scale2 screen_scale, PX_Vector2 screen_pos);

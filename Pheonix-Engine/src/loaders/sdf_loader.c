@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <rendering-sys/opengl.h>
+#include <rendering-sys/internal.h>
+
 #include <loaders/sdf-loader.h>
 #include <font.h>
 #include <err-codes.h>
@@ -59,7 +62,7 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 
     free(pixels);
 
-    out->texture = tex;
+    out->texture = (PheonixEngine_GPU_Handle)tex;
     out->glyphs = glyphs;
     out->glyph_count = h.glyph_count;
     out->ascent = h.ascent;
@@ -73,7 +76,7 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 void px_sdf_free(struct px_sdf_font_data* data) {
     if (!data) return;
 
-    glDeleteTextures(1, &data->texture);
+    glDeleteTextures(1, (GLuint*)&data->texture);
     free(data->glyphs);
     memset(data, 0, sizeof(*data));
 }
@@ -104,7 +107,7 @@ const struct px_sdf_glyph* px_sdf_find_glyph(const PX_Font* font, uint32_t cp) {
     return NULL;
 }
 
-GLuint px_sdf_gl_texture(const PX_Font* font) {
+PheonixEngine_GPU_Handle px_sdf_get_texture(const PX_Font* font) {
     if (!font || font->backend != PX_FONT_BACKEND_SDF)
         return 0;
     return font->impl.sdf.texture;

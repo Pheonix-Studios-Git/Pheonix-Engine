@@ -1,7 +1,6 @@
 #include <stdlib.h>
 
 #include <rendering-sys.h>
-#include <rendering-sys/opengl.h>
 #include <rendering-sys/loader.h>
 #include <rendering-sys/internal.h>
 

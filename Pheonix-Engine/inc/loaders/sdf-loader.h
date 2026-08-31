@@ -2,7 +2,8 @@
 
 #include <stdint.h>
 
-#include <rendering-sys/opengl.h>
+#include <rendering-sys/internal.h>
+
 #include <err-codes.h>
 #include <font.h>
 
@@ -39,7 +40,7 @@ struct px_sdf_glyph {
 } __attribute__((packed));
 
 struct px_sdf_font_data {
-    GLuint texture;
+    PheonixEngine_GPU_Handle texture;
     struct px_sdf_glyph* glyphs;
     uint16_t glyph_count;
 
@@ -57,4 +58,4 @@ float px_sdf_line_gap(const PX_Font* font);
 
 float px_sdf_range(const PX_Font* font);
 const struct px_sdf_glyph* px_sdf_find_glyph(const PX_Font* font, uint32_t cp);
-GLuint px_sdf_gl_texture(const PX_Font* font);
+PheonixEngine_GPU_Handle px_sdf_get_texture(const PX_Font* font);
