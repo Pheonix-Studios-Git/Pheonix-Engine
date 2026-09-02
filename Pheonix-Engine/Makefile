@@ -54,6 +54,7 @@ INCS := -I$(INC_DIR)
 
 OPT_LEVEL ?= 0
 TARGET_CPU ?= generic
+EXTRA ?=
 
 CPU_FLAGS :=
 
@@ -61,8 +62,8 @@ ifneq ($(TARGET_CPU),generic)
     CPU_FLAGS += -march=$(TARGET_CPU) -mtune=$(TARGET_CPU)
 endif
 
-COMMON_CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS)
-LDFLAGS := -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp -ldl
+CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
+LDFLAGS := $(EXTRA) -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp -ldl
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')

@@ -3,6 +3,7 @@
 
 #include <pheonix-engine.h>
 #include <rendering-sys.h>
+#include <font.h>
 #include <event-sys.h>
 #include <err-codes.h>
 #include <window-sys.h>
@@ -20,11 +21,11 @@ static t_err_codes editor_init_state(char* proj_name) {
 
     root_obj->active = true;
     root_obj->ex_data = NULL;
-    root_obj->ex_data_type = OBJECT_3D_TYPE_EMPTY;
+    root_obj->ex_data_type = PX_RS_OBJECT_3D_TYPE_EMPTY;
     root_obj->has_children = false;
     root_obj->name = "root";
     root_obj->static_object = true;
-    root_obj->type = OBJECT_3D_TYPE_EMPTY;
+    root_obj->type = PX_RS_OBJECT_3D_TYPE_EMPTY;
     root_obj->local_transform = (PX_Transform3){.rot.w=1,.scale=(PX_Scale3){1,1,1}};
     root_obj->world_transform = (PX_Transform3){.rot.w=1,.scale=(PX_Scale3){1,1,1}};
 

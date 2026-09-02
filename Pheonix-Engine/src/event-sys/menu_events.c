@@ -4,6 +4,7 @@
 #include <window-sys.h>
 #include <event-sys.h>
 #include <rendering-sys.h>
+#include <font.h>
 #include <rendering-sys/loader.h>
 #include <editor.h>
 #include <event-sys/menu-events.h>
@@ -22,7 +23,7 @@ static bool fullscreened = false;
 static void handle_file_new(void) {
 	for (size_t i = 0; i < load_ptr; i++) {
         PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
-        if (obj->type == OBJECT_3D_TYPE_MESH) {
+        if (obj->type == PX_RS_OBJECT_3D_TYPE_MESH) {
             px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
         }
     }
@@ -57,7 +58,7 @@ static void handle_file_quit(void) {
     // Cleanup
     for (size_t i = 0; i < load_ptr; i++) {
         PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
-        if (obj->type == OBJECT_3D_TYPE_MESH) {
+        if (obj->type == PX_RS_OBJECT_3D_TYPE_MESH) {
             px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
         }
     }

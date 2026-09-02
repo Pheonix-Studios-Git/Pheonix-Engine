@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <rendering-sys/loader.h>
 #include <rendering-sys/internal.h>
 
@@ -96,11 +97,11 @@ size_t px_rs_loader_load_file(PX_Scene* s, const char* path) {
         obj.active = true;
         obj.has_children = false;
         obj.ex_data = b;
-        obj.ex_data_type = OBJECT_3D_TYPE_MESH;
+        obj.ex_data_type = PX_RS_OBJECT_3D_TYPE_MESH;
         obj.local_transform = (PX_Transform3){.rot.w=1,.scale=(PX_Scale3){1,1,1}};
         obj.world_transform = (PX_Transform3){.rot.w=1,.scale=(PX_Scale3){1,1,1}};
         obj.static_object = false;
-        obj.type = OBJECT_3D_TYPE_MESH;
+        obj.type = PX_RS_OBJECT_3D_TYPE_MESH;
 
         if (mesh->mName.length > 0) {
             obj.name = (char*)malloc(mesh->mName.length + 1);
@@ -131,7 +132,7 @@ size_t px_rs_loader_load_file(PX_Scene* s, const char* path) {
 void px_rs_loader_destroy_load(PX_Scene* s, PX_3D_Object* object) {
     if (!s || !object) return;
 
-    if (object->type == OBJECT_3D_TYPE_MESH && object->ex_data && object->ex_data_type == OBJECT_3D_TYPE_MESH) {
+    if (object->type == PX_RS_OBJECT_3D_TYPE_MESH && object->ex_data && object->ex_data_type == PX_RS_OBJECT_3D_TYPE_MESH) {
         struct batch_3d* b = (struct batch_3d*)object->ex_data;
 
         if (b->vertices) {

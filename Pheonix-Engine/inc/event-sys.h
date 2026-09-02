@@ -2,6 +2,7 @@
 
 #include <event-sys/keycodes.h>
 #include <rendering-sys.h>
+#include <font.h>
 
 typedef enum {
     EVENT_GSIGNAL_UNKNOWN = 0,

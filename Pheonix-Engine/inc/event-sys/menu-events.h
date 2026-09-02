@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <event-sys.h>
 
 void menu_evs_init(PX_Dropdown* menu_dd, char* path_to_save);

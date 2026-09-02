@@ -4,6 +4,7 @@
 
 #include <window-sys.h>
 #include <rendering-sys.h>
+#include <font.h>
 #include <window-sys/backends.h>
 #include <err-codes.h>
 

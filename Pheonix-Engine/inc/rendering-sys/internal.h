@@ -1,16 +1,14 @@
 #pragma once
 
 #include <rendering-sys.h>
+#include <font.h>
 
 #define MAX_BATCHES 256
 #define MAX_VERTEX_COUNT 8192
 #define MAX_3D_INDICES 131072
 
-typedef uint64_t PheonixEngine_GPU_Handle;
-#define PHEONIX_GPU_INVALID_HANDLE ((PheonixEngine_GPU_Handle)0)
-
 struct sdf_font {
-    PheonixEngine_GPU_Handle texture;
+    PX_GPU_Handle texture;
     struct px_sdf_glyph* glyphs;
     uint16_t glyph_count;
 
@@ -59,7 +57,8 @@ struct ui_batch {
     PX_Scale2 texel_size;
     float noise;
     float corner_radius;
-    PheonixEngine_GPU_Handle texture;
+    PX_GPU_Handle texture;
+	PX_GPU_Handle sampler;
     float text_sdf_width;
     float text_pixel_height;
     float text_outline_width;
@@ -68,7 +67,7 @@ struct ui_batch {
 
 struct batch_3d {
     enum batch_3d_type type;
-    PheonixEngine_GPU_Handle fbo;
+    PX_GPU_Handle fbo;
     int fbo_x;
     int fbo_y;
     int fbo_w;

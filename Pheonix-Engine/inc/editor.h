@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <err-codes.h>
 
 #define PX_EDITOR_CUR_VERSION 1.0f

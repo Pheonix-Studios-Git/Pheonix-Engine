@@ -7,6 +7,7 @@
 #include <cglm/cglm.h>
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <err-codes.h>
 #include <loaders/sdf-loader.h>
 #include <decoders/unicode.h>
@@ -159,6 +160,8 @@ static PX_Transform3 opengl_combine_transform3(PX_Transform3 parent, PX_Transfor
 }
 
 static char* read_shader(const char* name) {
+	if (!name) return NULL;
+
     char path[512];
     snprintf(path, sizeof(path), "shaders/%s", name);
 
@@ -184,6 +187,8 @@ static char* read_shader(const char* name) {
 }
 
 static unsigned int pxgl_compile_shader(unsigned int type, const char* source) {
+	if (!source) return 0;
+
     unsigned int shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, NULL);
     glCompileShader(shader);
@@ -201,6 +206,8 @@ static unsigned int pxgl_compile_shader(unsigned int type, const char* source) {
 }
 
 static unsigned int pxgl_create_program(const char* vert, const char* frag) {
+	if (!vert || !frag) return 0;
+
     char* vert_src = read_shader(vert);
     char* frag_src = read_shader(frag);
 
@@ -243,7 +250,260 @@ static unsigned int pxgl_create_program(const char* vert, const char* frag) {
     return program;
 }
 
+static GLenum pxgl_get_texture_type(PX_TextureType type) {
+	switch (type) {
+		case PX_RS_TEXTURE_TYPE_1D: return GL_TEXTURE_1D;
+		case PX_RS_TEXTURE_TYPE_1DA: return GL_TEXTURE_1D_ARRAY;
+
+		case PX_RS_TEXTURE_TYPE_2D: return GL_TEXTURE_2D;
+		case PX_RS_TEXTURE_TYPE_2DA: return GL_TEXTURE_2D_ARRAY;
+		case PX_RS_TEXTURE_TYPE_2DMS: return GL_TEXTURE_2D_MULTISAMPLE;
+		case PX_RS_TEXTURE_TYPE_2DMSA: return GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
+
+		case PX_RS_TEXTURE_TYPE_3D: return GL_TEXTURE_3D;
+		case PX_RS_TEXTURE_TYPE_3DCUBE: return GL_TEXTURE_CUBE_MAP;
+		case PX_RS_TEXTURE_TYPE_3DACUBE: return GL_TEXTURE_CUBE_MAP_ARRAY;
+
+		default: return GL_INVALID_ENUM;
+	}
+}
+
+static GLenum pxgl_get_texture_format(PX_TextureFormat format) {
+	switch (format) {
+        // Red Channel
+        case PX_RS_TEXTURE_FORMAT_R8UNORM: return GL_R8;
+        case PX_RS_TEXTURE_FORMAT_R8SNORM: return GL_R8_SNORM;
+        case PX_RS_TEXTURE_FORMAT_R8U: return GL_R8UI;
+        case PX_RS_TEXTURE_FORMAT_R8I: return GL_R8I;
+
+        case PX_RS_TEXTURE_FORMAT_R16UNORM: return GL_R16;
+        case PX_RS_TEXTURE_FORMAT_R16SNORM: return GL_R16_SNORM;
+        case PX_RS_TEXTURE_FORMAT_R16U: return GL_R16UI;
+        case PX_RS_TEXTURE_FORMAT_R16I: return GL_R16I;
+        case PX_RS_TEXTURE_FORMAT_R16F: return GL_R16F;
+
+        case PX_RS_TEXTURE_FORMAT_R32U: return GL_R32UI;
+        case PX_RS_TEXTURE_FORMAT_R32I: return GL_R32I;
+        case PX_RS_TEXTURE_FORMAT_R32F: return GL_R32F;
+
+        // Red + Green Channel
+        case PX_RS_TEXTURE_FORMAT_RG8UNORM: return GL_RG8;
+        case PX_RS_TEXTURE_FORMAT_RG8SNORM: return GL_RG8_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RG8U: return GL_RG8UI;
+        case PX_RS_TEXTURE_FORMAT_RG8I: return GL_RG8I;
+
+        case PX_RS_TEXTURE_FORMAT_RG16UNORM: return GL_RG16;
+        case PX_RS_TEXTURE_FORMAT_RG16SNORM: return GL_RG16_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RG16U: return GL_RG16UI;
+        case PX_RS_TEXTURE_FORMAT_RG16I: return GL_RG16I;
+        case PX_RS_TEXTURE_FORMAT_RG16F: return GL_RG16F;
+
+        case PX_RS_TEXTURE_FORMAT_RG32U: return GL_RG32UI;
+        case PX_RS_TEXTURE_FORMAT_RG32I: return GL_RG32I;
+        case PX_RS_TEXTURE_FORMAT_RG32F: return GL_RG32F;
+
+        // Red + Green + Blue Channel
+        case PX_RS_TEXTURE_FORMAT_RGB8UNORM: return GL_RGB8;
+        case PX_RS_TEXTURE_FORMAT_RGB8SNORM: return GL_RGB8_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RGB8U: return GL_RGB8UI;
+        case PX_RS_TEXTURE_FORMAT_RGB8I: return GL_RGB8I;
+        case PX_RS_TEXTURE_FORMAT_RGB8sRGB: return GL_SRGB8;
+
+        case PX_RS_TEXTURE_FORMAT_RGB16UNORM: return GL_RGB16;
+        case PX_RS_TEXTURE_FORMAT_RGB16SNORM: return GL_RGB16_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RGB16U: return GL_RGB16UI;
+        case PX_RS_TEXTURE_FORMAT_RGB16I: return GL_RGB16I;
+        case PX_RS_TEXTURE_FORMAT_RGB16F: return GL_RGB16F;
+
+        case PX_RS_TEXTURE_FORMAT_RGB32U: return GL_RGB32UI;
+        case PX_RS_TEXTURE_FORMAT_RGB32I: return GL_RGB32I;
+        case PX_RS_TEXTURE_FORMAT_RGB32F: return GL_RGB32F;
+
+        // Red + Green + Blue + Alpha Channel
+        case PX_RS_TEXTURE_FORMAT_RGBA8UNORM: return GL_RGBA8;
+        case PX_RS_TEXTURE_FORMAT_RGBA8SNORM: return GL_RGBA8_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RGBA8U: return GL_RGBA8UI;
+        case PX_RS_TEXTURE_FORMAT_RGBA8I: return GL_RGBA8I;
+        case PX_RS_TEXTURE_FORMAT_RGBA8sRGB: return GL_SRGB8_ALPHA8;
+
+        case PX_RS_TEXTURE_FORMAT_RGBA16UNORM: return GL_RGBA16;
+        case PX_RS_TEXTURE_FORMAT_RGBA16SNORM: return GL_RGBA16_SNORM;
+        case PX_RS_TEXTURE_FORMAT_RGBA16U: return GL_RGBA16UI;
+        case PX_RS_TEXTURE_FORMAT_RGBA16I: return GL_RGBA16I;
+        case PX_RS_TEXTURE_FORMAT_RGBA16F: return GL_RGBA16F;
+
+        case PX_RS_TEXTURE_FORMAT_RGBA32U: return GL_RGBA32UI;
+        case PX_RS_TEXTURE_FORMAT_RGBA32I: return GL_RGBA32I;
+        case PX_RS_TEXTURE_FORMAT_RGBA32F: return GL_RGBA32F;
+
+        default: return GL_INVALID_ENUM;
+    }
+}
+
+static GLenum pxgl_get_texture_upload_format(PX_TextureFormat format) {
+	switch (format) {
+		case PX_RS_TEXTURE_FORMAT_R8UNORM:
+		case PX_RS_TEXTURE_FORMAT_R8SNORM:
+		case PX_RS_TEXTURE_FORMAT_R8U:
+		case PX_RS_TEXTURE_FORMAT_R8I:
+		case PX_RS_TEXTURE_FORMAT_R16UNORM:
+		case PX_RS_TEXTURE_FORMAT_R16SNORM:
+		case PX_RS_TEXTURE_FORMAT_R16U:
+		case PX_RS_TEXTURE_FORMAT_R16I:
+		case PX_RS_TEXTURE_FORMAT_R16F:
+		case PX_RS_TEXTURE_FORMAT_R32U:
+		case PX_RS_TEXTURE_FORMAT_R32I:
+		case PX_RS_TEXTURE_FORMAT_R32F:
+			return GL_RED;
+
+		case PX_RS_TEXTURE_FORMAT_RG8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RG8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RG8U:
+		case PX_RS_TEXTURE_FORMAT_RG8I:
+		case PX_RS_TEXTURE_FORMAT_RG16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RG16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RG16U:
+		case PX_RS_TEXTURE_FORMAT_RG16I:
+		case PX_RS_TEXTURE_FORMAT_RG16F:
+		case PX_RS_TEXTURE_FORMAT_RG32U:
+		case PX_RS_TEXTURE_FORMAT_RG32I:
+		case PX_RS_TEXTURE_FORMAT_RG32F:
+			return GL_RG;
+
+		case PX_RS_TEXTURE_FORMAT_RGB8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB8U:
+		case PX_RS_TEXTURE_FORMAT_RGB8I:
+		case PX_RS_TEXTURE_FORMAT_RGB8sRGB:
+		case PX_RS_TEXTURE_FORMAT_RGB16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB16U:
+		case PX_RS_TEXTURE_FORMAT_RGB16I:
+		case PX_RS_TEXTURE_FORMAT_RGB16F:
+		case PX_RS_TEXTURE_FORMAT_RGB32U:
+		case PX_RS_TEXTURE_FORMAT_RGB32I:
+		case PX_RS_TEXTURE_FORMAT_RGB32F:
+			return GL_RGB;
+
+		case PX_RS_TEXTURE_FORMAT_RGBA8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA8U:
+		case PX_RS_TEXTURE_FORMAT_RGBA8I:
+		case PX_RS_TEXTURE_FORMAT_RGBA8sRGB:
+		case PX_RS_TEXTURE_FORMAT_RGBA16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA16U:
+		case PX_RS_TEXTURE_FORMAT_RGBA16I:
+		case PX_RS_TEXTURE_FORMAT_RGBA16F:
+		case PX_RS_TEXTURE_FORMAT_RGBA32U:
+		case PX_RS_TEXTURE_FORMAT_RGBA32I:
+		case PX_RS_TEXTURE_FORMAT_RGBA32F:
+			return GL_RGBA;
+
+		default: return GL_INVALID_ENUM;
+	}
+}
+
+static GLenum pxgl_get_texture_upload_type(PX_TextureFormat format) {
+	switch (format) {
+		case PX_RS_TEXTURE_FORMAT_R8UNORM:
+		case PX_RS_TEXTURE_FORMAT_R8U:
+		case PX_RS_TEXTURE_FORMAT_RG8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RG8U:
+		case PX_RS_TEXTURE_FORMAT_RGB8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB8U:
+		case PX_RS_TEXTURE_FORMAT_RGB8sRGB:
+		case PX_RS_TEXTURE_FORMAT_RGBA8UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA8U:
+		case PX_RS_TEXTURE_FORMAT_RGBA8sRGB:
+			return GL_UNSIGNED_BYTE;
+
+		case PX_RS_TEXTURE_FORMAT_R8SNORM:
+		case PX_RS_TEXTURE_FORMAT_R8I:
+		case PX_RS_TEXTURE_FORMAT_RG8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RG8I:
+		case PX_RS_TEXTURE_FORMAT_RGB8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB8I:
+		case PX_RS_TEXTURE_FORMAT_RGBA8SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA8I:
+			return GL_BYTE;
+
+		case PX_RS_TEXTURE_FORMAT_R16UNORM:
+		case PX_RS_TEXTURE_FORMAT_R16U:
+		case PX_RS_TEXTURE_FORMAT_RG16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RG16U:
+		case PX_RS_TEXTURE_FORMAT_RGB16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB16U:
+		case PX_RS_TEXTURE_FORMAT_RGBA16UNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA16U:
+			return GL_UNSIGNED_SHORT;
+
+		case PX_RS_TEXTURE_FORMAT_R16SNORM:
+		case PX_RS_TEXTURE_FORMAT_R16I:
+		case PX_RS_TEXTURE_FORMAT_RG16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RG16I:
+		case PX_RS_TEXTURE_FORMAT_RGB16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGB16I:
+		case PX_RS_TEXTURE_FORMAT_RGBA16SNORM:
+		case PX_RS_TEXTURE_FORMAT_RGBA16I:
+			return GL_SHORT;
+
+		case PX_RS_TEXTURE_FORMAT_R16F:
+		case PX_RS_TEXTURE_FORMAT_RG16F:
+		case PX_RS_TEXTURE_FORMAT_RGB16F:
+		case PX_RS_TEXTURE_FORMAT_RGBA16F:
+			return GL_HALF_FLOAT;
+
+		case PX_RS_TEXTURE_FORMAT_R32U:
+		case PX_RS_TEXTURE_FORMAT_RG32U:
+		case PX_RS_TEXTURE_FORMAT_RGB32U:
+		case PX_RS_TEXTURE_FORMAT_RGBA32U:
+			return GL_UNSIGNED_INT;
+
+		case PX_RS_TEXTURE_FORMAT_R32I:
+		case PX_RS_TEXTURE_FORMAT_RG32I:
+		case PX_RS_TEXTURE_FORMAT_RGB32I:
+		case PX_RS_TEXTURE_FORMAT_RGBA32I:
+			return GL_INT;
+
+		case PX_RS_TEXTURE_FORMAT_R32F:
+		case PX_RS_TEXTURE_FORMAT_RG32F:
+		case PX_RS_TEXTURE_FORMAT_RGB32F:
+		case PX_RS_TEXTURE_FORMAT_RGBA32F:
+			return GL_FLOAT;
+
+		default: return GL_INVALID_ENUM;
+	}
+}
+
+static GLenum pxgl_get_texture_filter(PX_TextureFilter filter) {
+	switch (filter) {
+		case PX_RS_TEXTURE_FILTER_NEAREST: return GL_NEAREST;
+		case PX_RS_TEXTURE_FILTER_LINEAR: return GL_LINEAR;
+
+		case PX_RS_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST: return GL_NEAREST_MIPMAP_NEAREST;
+		case PX_RS_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST: return GL_LINEAR_MIPMAP_NEAREST;
+		case PX_RS_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR: return GL_NEAREST_MIPMAP_LINEAR;
+		case PX_RS_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR: return GL_LINEAR_MIPMAP_LINEAR;
+
+		default: return GL_INVALID_ENUM;
+	}
+}
+
+static GLenum pxgl_get_texture_address_mode(PX_TextureAddressMode mode) {
+	switch (mode) {
+		case PX_RS_TEXTURE_ADDRESS_REPEAT: return GL_REPEAT;
+		case PX_RS_TEXTURE_ADDRESS_MIRRORED_REPEAT: return GL_MIRRORED_REPEAT;
+		case PX_RS_TEXTURE_ADDRESS_CLAMP_TO_EDGE: return GL_CLAMP_TO_EDGE;
+		case PX_RS_TEXTURE_ADDRESS_CLAMP_TO_BORDER: return GL_CLAMP_TO_BORDER;
+
+		default: return GL_INVALID_ENUM;
+	}
+}
+
 static void pxgl_ui_ortho(float left, float right, float bottom, float top, float* out_mat4) {
+	if (!out_mat4) return;
+
     memset(out_mat4, 0, sizeof(float) * 16);
 
     out_mat4[0] = 2.0f / (right - left);
@@ -271,8 +531,8 @@ static void pxgl_ui_push_quad(PX_Vector2 pos, PX_Scale2 scale, PX_Color4 c) {
 }
 
 static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
-    if (gr_gl_ui->vertex_count + 6 > gr_gl_ui->vertex_capacity)
-        return;
+	if (!g) return;
+    if (gr_gl_ui->vertex_count + 6 > gr_gl_ui->vertex_capacity) return;
 
     struct ui_vertex* v = gr_gl_ui->vertices + gr_gl_ui->vertex_count;
 
@@ -307,6 +567,8 @@ static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thic
 }
 
 static void pxgl_rs_internal_push_batch_ui(struct ui_batch* b) {
+	if (!b) return;
+
     if (gr_gl_ui->batch_count > 0) {
         struct ui_batch* last_b = &gr_gl_ui->batches[gr_gl_ui->batch_count - 1];
 
@@ -336,6 +598,8 @@ static void pxgl_rs_internal_push_batch_ui(struct ui_batch* b) {
 }
 
 static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct batch_3d* b) {
+	if (!b) return;
+
     memset(b, 0, sizeof(struct batch_3d));
     memcpy(&b->transform, &transform, sizeof(PX_Transform3));
     
@@ -458,7 +722,7 @@ static void pxgl_rs_internal_push_batch_3d(struct batch_3d* b) {
     gr_gl_3d->batch_count++;
 }
 
-t_err_codes px_rs_init_gl(void) {
+t_err_codes px_rs_gl_init(void) {
     GLenum err = glewInit();
     if (err != GLEW_OK) {
         fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
@@ -467,7 +731,7 @@ t_err_codes px_rs_init_gl(void) {
     return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_init_gl_ui(PX_Scale2 screen_scale) {
+t_err_codes px_rs_gl_init_ui(PX_Scale2 screen_scale) {
     memset(gr_gl_ui, 0, sizeof(*gr_gl_ui));
 
     gr_gl_ui->program = pxgl_create_program("ui_vertex.glsl", "ui_fragment.glsl");
@@ -552,7 +816,7 @@ t_err_codes px_rs_init_gl_ui(PX_Scale2 screen_scale) {
     return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_init_gl_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
+t_err_codes px_rs_gl_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     gscene_cam.position[0] = 8.0f;
     gscene_cam.position[1] = 8.0f;
     gscene_cam.position[2] = 8.0f;
@@ -807,6 +1071,7 @@ void px_rs_gl_ui_frame_end(void) {
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
+				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
                 glUniform1i(gr_gl_ui->uni_texture, 0);
 
                 attr_pos = gr_gl_ui->attr_pos;
@@ -823,6 +1088,7 @@ void px_rs_gl_ui_frame_end(void) {
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
+				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
                 glUniform1i(gr_gl_ui->text_uni_texture, 0);
 
                 attr_pos = gr_gl_ui->text_attr_pos;
@@ -839,6 +1105,7 @@ void px_rs_gl_ui_frame_end(void) {
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
+				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
                 glUniform1i(gr_gl_ui->uni_texture, 0);
 
                 attr_pos = gr_gl_ui->attr_pos;
@@ -1086,7 +1353,7 @@ t_err_codes px_rs_gl_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise
     b.texel_size = (PX_Scale2){1, 1};
     b.corner_radius = cradius;
     b.noise = noise;
-    b.texture = (PheonixEngine_GPU_Handle)gr_gl_ui->blank_tex;
+    b.texture = (PX_GPU_Handle)gr_gl_ui->blank_tex;
     b.vertex_count = vertex_count;
     b.vertex_offset = start_vertex;
 
@@ -1095,22 +1362,9 @@ t_err_codes px_rs_gl_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise
     return ERR_SUCCESS;
 }
 
-int px_rs_gl_text_width(PX_Font* font, const char* text, float pixel_height) {
-    float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
-    float pen_x = 0.0f;
-
-    for (const char* p = text; *p; ) {
-        uint32_t cp = px_utf8_decode(&p);
-        const struct px_sdf_glyph* g = px_sdf_find_glyph(font, cp);
-        if (!g) continue;
-
-        pen_x += g->advance * scale;
-    }
-
-    return (int)(pen_x + 0.5f);
-}
-
 t_err_codes px_rs_gl_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
+	if (!text) return ERR_INVALID_ARGUMENTS;
+
     int start_vertex = gr_gl_ui->vertex_count;
     float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
 
@@ -1149,7 +1403,7 @@ t_err_codes px_rs_gl_render_text(const char* text, float pixel_height, PX_Vector
     b.text_pixel_height = pixel_height;
     b.text_outline_width = sdf_width * 2.0f;
     b.text_outline_color = (PX_Color4){0x00, 0x00, 0x00, 0xFF};
-    b.texture = px_sdf_get_texture(font);
+    b.texture = px_sdf_get_texture(font, &b.sampler);
     b.vertex_count = vertex_count;
     b.vertex_offset = start_vertex;
 
@@ -1167,7 +1421,7 @@ t_err_codes px_rs_gl_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness
     b.type = UI_BATCH_LINE;
     b.size = (PX_Scale2){0,0};
     b.texel_size = (PX_Scale2){1,1};
-    b.texture = (PheonixEngine_GPU_Handle)gr_gl_ui->blank_tex;
+    b.texture = (PX_GPU_Handle)gr_gl_ui->blank_tex;
     b.noise = 0.0f;
     b.corner_radius = 0.0f;
     b.vertex_offset = start_vertex;
@@ -1178,6 +1432,8 @@ t_err_codes px_rs_gl_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness
 }
 
 t_err_codes px_rs_gl_draw_dropdown(PX_Dropdown* dd) {
+	if (!dd) return ERR_INVALID_ARGUMENTS;
+
     PX_Color4 color = dd->color; 
     px_rs_gl_draw_panel((PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}}, color, dd->noise, dd->cradius);
 
@@ -1188,7 +1444,7 @@ t_err_codes px_rs_gl_draw_dropdown(PX_Dropdown* dd) {
         PX_Color4 tcolor = dd->hover_index == i ? dd->hover_color : dd->text_color;
         px_rs_gl_render_text(item->label, dd->font_size, (PX_Vector2){x, dd->stext_pos.y}, tcolor, dd->font);
 
-        x += dd->spacing + px_rs_gl_text_width(dd->font, item->label, dd->font_size);
+        x += dd->spacing + px_rs_text_width(dd->font, item->label, dd->font_size);
 
         if (item->is_open) {
             px_rs_gl_draw_panel(item->panel_tran, item->panel_color, item->panel_noise, item->panel_cradius);
@@ -1271,6 +1527,8 @@ void px_rs_gl_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
 }
 
 t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
+	if (!scene) return ERR_INVALID_ARGUMENTS;
+
     for (size_t i = 0; i < scene->editor_object_count; i++) {
         struct batch_3d batch = {0};
         batch.depth_override = false;
@@ -1284,13 +1542,13 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
         PX_Transform3 finalT = opengl_combine_transform3(worldT, localT);
 
         switch (obj->type){
-            case OBJECT_3D_EDITOR_GRID: {
+            case PX_RS_OBJECT_3D_EDITOR_GRID: {
                 if (!obj->ex_data) continue;
                 push_3d_grid(obj->ex_data, worldT, &batch);
 				pxgl_rs_internal_push_batch_3d(&batch);
                 break;
             }
-            case OBJECT_3D_EDITOR_GIZMO: {
+            case PX_RS_OBJECT_3D_EDITOR_GIZMO: {
                 PX_Vector3 GXep = (PX_Vector3){finalT.pos.x + 5, finalT.pos.y, finalT.pos.z};
                 PX_Vector3 GYep = (PX_Vector3){finalT.pos.x, finalT.pos.y + 5, finalT.pos.z};
                 PX_Vector3 GZep = (PX_Vector3){finalT.pos.x, finalT.pos.y, finalT.pos.z + 5};
@@ -1321,7 +1579,7 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
                 };
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GXep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PheonixEngine_GPU_Handle)gr_gl_3d->flatFBO;
+                batch.fbo = (PX_GPU_Handle)gr_gl_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1331,7 +1589,7 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
                 pxgl_rs_internal_push_batch_3d(&batch);
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GYep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PheonixEngine_GPU_Handle)gr_gl_3d->flatFBO;
+                batch.fbo = (PX_GPU_Handle)gr_gl_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1341,7 +1599,7 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
                 pxgl_rs_internal_push_batch_3d(&batch);
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GZep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PheonixEngine_GPU_Handle)gr_gl_3d->flatFBO;
+                batch.fbo = (PX_GPU_Handle)gr_gl_3d->flatFBO;
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1359,6 +1617,8 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
 }
 
 t_err_codes px_rs_gl_draw_scene(PX_Scene* scene) {
+	if (!scene) return ERR_INVALID_ARGUMENTS;
+
     for (size_t i = 0; i < scene->object_count; i++) {
         PX_3D_Object* obj = &scene->objects[i];
         if (!obj->active) continue;
@@ -1372,7 +1632,7 @@ t_err_codes px_rs_gl_draw_scene(PX_Scene* scene) {
         batch.pure_color = false;
 
         switch (obj->type){
-            case OBJECT_3D_TYPE_MESH: {
+            case PX_RS_OBJECT_3D_TYPE_MESH: {
                 if (!obj->ex_data) continue;
                 struct batch_3d* b = (struct batch_3d*)obj->ex_data;
                 if (gr_gl_3d->vertex_count + b->vertex_count > gr_gl_3d->vertex_capacity) continue; // Skip, too large
@@ -1448,4 +1708,178 @@ void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     };
 
     event_send_gsignal(&event);
+}
+
+t_err_codes px_rs_gl_create_texture(PX_Texture* texture) {
+	if (!texture) return ERR_INVALID_ARGUMENTS;
+	
+	GLenum tex_type = pxgl_get_texture_type(texture->type);
+	if (tex_type == GL_INVALID_ENUM) return ERR_RS_INVALID_TEXTURE_TYPE;
+	
+	GLenum tex_format = pxgl_get_texture_format(texture->format);
+	if (tex_format == GL_INVALID_ENUM) return ERR_RS_INVALID_TEXTURE_FORMAT;
+
+	GLuint out = 0;
+	glCreateTextures(tex_type, 1, &out);
+	if (out == 0) return ERR_FAILURE;
+
+	switch (tex_type) {
+		case GL_TEXTURE_1D: {
+			glTextureStorage1D(out, texture->mip_levels, tex_format, texture->width);
+			break;
+		}
+		case GL_TEXTURE_1D_ARRAY: {
+			glTextureStorage2D(out, texture->mip_levels, tex_format, texture->width, texture->layers);
+			break;
+		}
+		case GL_TEXTURE_2D: {
+			glTextureStorage2D(out, texture->mip_levels, tex_format, texture->width, texture->height);
+			break;
+		}
+		case GL_TEXTURE_2D_ARRAY: {
+			glTextureStorage3D(out, texture->mip_levels, tex_format, texture->width, texture->height, texture->layers);
+			break;
+		}
+		case GL_TEXTURE_2D_MULTISAMPLE: {
+			glTextureStorage2DMultisample(out, texture->samples, tex_format, texture->width, texture->height, GL_TRUE);
+			break;
+		}
+		case GL_TEXTURE_2D_MULTISAMPLE_ARRAY: {
+			glTextureStorage3DMultisample(out, texture->samples, tex_format, texture->width, texture->height, texture->layers, GL_TRUE);
+			break;
+		}
+		case GL_TEXTURE_3D: {
+			glTextureStorage3D(out, texture->mip_levels, tex_format, texture->width, texture->height, texture->depth);
+			break;
+		}
+		case GL_TEXTURE_CUBE_MAP: {
+			glTextureStorage2D(out, texture->mip_levels, tex_format, texture->width, texture->width);
+			break;
+		}
+		case GL_TEXTURE_CUBE_MAP_ARRAY: {
+			glTextureStorage3D(out, texture->mip_levels, tex_format, texture->width, texture->width, texture->layers * 6);
+			break;
+		}
+		default: {
+			glDeleteTextures(1, &out);
+			return ERR_RS_INVALID_TEXTURE_FORMAT;
+		}
+	}
+
+	texture->handle = (PX_GPU_Handle)out;
+	texture->sampler_handle = PX_RS_GPU_INVALID_HANDLE;
+	return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_gl_upload_texture(PX_Texture* texture, PX_TextureFormat source_format, uint32_t mip_level, const void* data) {
+	if (!texture || !data) return ERR_INVALID_ARGUMENTS;
+	if (texture->handle == PX_RS_GPU_INVALID_HANDLE) return ERR_RS_INVALID_HANDLE;
+	if (mip_level >= texture->mip_levels) return ERR_RS_INVALID_MIP_LEVEL;
+
+	GLuint handle = (GLuint)texture->handle;
+
+	GLenum format = pxgl_get_texture_upload_format(source_format);
+	if (format == GL_INVALID_ENUM) return ERR_RS_INVALID_TEXTURE_FORMAT;
+
+	GLenum type = pxgl_get_texture_upload_type(source_format);
+	if (type == GL_INVALID_ENUM) return ERR_RS_INVALID_TEXTURE_FORMAT;
+
+	uint32_t width = texture->width >> mip_level;
+	uint32_t height = texture->height >> mip_level;
+	uint32_t depth = texture->depth >> mip_level;
+
+	if (width == 0) width = 1;
+	if (height == 0) height = 1;
+	if (depth == 0) depth = 1;
+
+	switch (texture->type) {
+		case PX_RS_TEXTURE_TYPE_1D: {
+			glTextureSubImage1D(handle, mip_level,0, width, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_1DA: {
+			glTextureSubImage2D(handle, mip_level, 0, 0, width, texture->layers, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_2D: {
+			glTextureSubImage2D(handle, mip_level, 0, 0, width, height,	format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_2DA: {
+			glTextureSubImage3D(handle, mip_level, 0, 0, 0, width, height, texture->layers, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_3D: {
+			glTextureSubImage3D(handle, mip_level, 0, 0, 0, width, height, depth, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_3DCUBE: {
+			glTextureSubImage3D(handle, mip_level, 0, 0, 0, width, height, 6, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_3DACUBE: {
+			glTextureSubImage3D(handle, mip_level, 0, 0, 0, width, height, texture->layers * 6, format, type, data);
+			break;
+		}
+
+		case PX_RS_TEXTURE_TYPE_2DMS:
+		case PX_RS_TEXTURE_TYPE_2DMSA:
+			return ERR_RS_INVALID_TEXTURE_TYPE;
+
+		default: return ERR_RS_INVALID_TEXTURE_TYPE;
+	}
+
+	return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_gl_set_sampler(PX_Texture* texture, PX_Sampler* sampler) {
+	if (!texture || !sampler) return ERR_INVALID_ARGUMENTS;
+	if (texture->handle == PX_RS_GPU_INVALID_HANDLE) return ERR_RS_INVALID_HANDLE;
+
+	GLenum filter_min = pxgl_get_texture_filter(sampler->min_filter);
+	if (filter_min == GL_INVALID_ENUM) return ERR_RS_INVALID_SAMPLER_FILTER;
+	GLenum filter_mag = pxgl_get_texture_filter(sampler->mag_filter);
+	if (filter_mag == GL_INVALID_ENUM) return ERR_RS_INVALID_SAMPLER_FILTER;
+
+	GLenum au = pxgl_get_texture_address_mode(sampler->address_u);
+	if (au == GL_INVALID_ENUM) return ERR_RS_INVALID_SAMPLER_ADDRESS_MODE;
+	GLenum av = pxgl_get_texture_address_mode(sampler->address_v);
+	if (av == GL_INVALID_ENUM) return ERR_RS_INVALID_SAMPLER_ADDRESS_MODE;
+	GLenum aw = pxgl_get_texture_address_mode(sampler->address_w);
+	if (aw == GL_INVALID_ENUM) return ERR_RS_INVALID_SAMPLER_ADDRESS_MODE;
+
+	GLuint out;
+	glCreateSamplers(1, &out);
+
+	glSamplerParameteri(out, GL_TEXTURE_MIN_FILTER, filter_min);
+	glSamplerParameteri(out, GL_TEXTURE_MAG_FILTER, filter_mag);
+
+	glSamplerParameteri(out, GL_TEXTURE_WRAP_S, au);
+	glSamplerParameteri(out, GL_TEXTURE_WRAP_T, av);
+	glSamplerParameteri(out, GL_TEXTURE_WRAP_R, aw);
+
+	sampler->handle = out;
+	texture->sampler_handle = out;
+
+	return ERR_SUCCESS;
+}
+
+void px_rs_gl_destroy_texture(PX_Texture* texture) {
+	if (!texture) return;
+	if (texture->handle == PX_RS_GPU_INVALID_HANDLE) return;
+
+	glDeleteTextures(1, (GLuint*)&texture->handle);
+}
+
+void px_rs_gl_destroy_sampler(PX_Sampler* sampler) {
+	if (!sampler) return;
+	if (sampler->handle == PX_RS_GPU_INVALID_HANDLE) return;
+
+	glDeleteSamplers(1, (GLuint*)&sampler->handle);
 }

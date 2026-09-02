@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <err-codes.h>
 
 size_t px_rs_loader_load_file(PX_Scene* s, const char* path);

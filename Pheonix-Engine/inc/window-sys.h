@@ -5,6 +5,7 @@
 
 #include <err-codes.h>
 #include <rendering-sys.h>
+#include <font.h>
 
 #define MAX_WINDOWS 10
 #define PX_WE_QUEUE_SIZE 64

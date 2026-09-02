@@ -3,9 +3,10 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <rendering-sys.h>
 #include <font.h>
-#include <err-codes.h>
 #include <loaders/sdf-loader.h>
+#include <err-codes.h>
 
 #include <external/cJSON.h>
 #include <external/stb_image.h>
@@ -22,6 +23,7 @@ PX_Font* px_font_load(const char* path) {
 
     font->backend = PX_FONT_BACKEND_SDF;
     font->impl.sdf.texture = sdf.texture;
+	font->impl.sdf.sampler = sdf.sampler;
     font->impl.sdf.glyphs = sdf.glyphs;
     font->impl.sdf.glyph_count = sdf.glyph_count;
     font->impl.sdf.ascent = sdf.ascent;
@@ -36,7 +38,9 @@ void px_font_destroy(PX_Font* font) {
     if (!font) return;
 
     if (font->backend == PX_FONT_BACKEND_SDF) {
-        glDeleteTextures(1, &font->impl.sdf.texture);
+        px_rs_destroy_texture(&font->impl.sdf.texture);
+		px_rs_destroy_sampler(&font->impl.sdf.sampler);
+
         free(font->impl.sdf.glyphs);
     }
 

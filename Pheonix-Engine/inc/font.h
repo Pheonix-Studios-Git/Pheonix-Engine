@@ -2,7 +2,6 @@
 
 #include <stdbool.h>
 
-#include <rendering-sys/internal.h>
 #include <err-codes.h>
 
 typedef enum {
@@ -15,7 +14,8 @@ typedef struct PX_Font {
 
     union {
         struct {
-            PheonixEngine_GPU_Handle texture;
+            PX_Texture texture;
+			PX_Sampler sampler;
             struct px_sdf_glyph* glyphs;
             uint16_t glyph_count;
 

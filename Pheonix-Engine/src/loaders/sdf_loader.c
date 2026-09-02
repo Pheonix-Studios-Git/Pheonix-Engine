@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <rendering-sys/opengl.h>
+#include <rendering-sys.h>
+#include <font.h>
 #include <rendering-sys/internal.h>
 
 #include <loaders/sdf-loader.h>
-#include <font.h>
 #include <err-codes.h>
 
 t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
@@ -45,24 +45,52 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 
     fclose(f);
 
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
+	PX_Texture tex = {
+		.type = PX_RS_TEXTURE_TYPE_2D,
+		.format = PX_RS_TEXTURE_FORMAT_R8UNORM,
+		.width = h.atlas_width,
+		.height = h.atlas_height,
+		.mip_levels = 1,
+		.samples = 1,
+	};
 
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_LUMINANCE,
-        h.atlas_width, h.atlas_height,
-        0, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels
-    );
+	t_err_codes err = px_rs_create_texture(&tex);
+	if (err != ERR_SUCCESS) {
+		free(pixels);
+		free(glyphs);
+		return err;
+	}
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	PX_Sampler sampler = {
+		.min_filter = PX_RS_TEXTURE_FILTER_LINEAR,
+		.mag_filter = PX_RS_TEXTURE_FILTER_LINEAR,
+		
+		.address_u = PX_RS_TEXTURE_ADDRESS_CLAMP_TO_EDGE,
+		.address_v = PX_RS_TEXTURE_ADDRESS_CLAMP_TO_EDGE,
+		.address_w = PX_RS_TEXTURE_ADDRESS_CLAMP_TO_EDGE,
+	};
+
+	err = px_rs_set_sampler(&tex, &sampler);
+	if (err != ERR_SUCCESS) {
+		px_rs_destroy_texture(&tex);
+		free(pixels);
+		free(glyphs);
+		return err;
+	}
+
+	err = px_rs_upload_texture(&tex, PX_RS_TEXTURE_FORMAT_R8UNORM, 0, pixels);
+	if (err != ERR_SUCCESS) {
+		px_rs_destroy_texture(&tex);
+		px_rs_destroy_sampler(&sampler);
+		free(pixels);
+		free(glyphs);
+		return err;
+	}
 
     free(pixels);
 
-    out->texture = (PheonixEngine_GPU_Handle)tex;
+    out->texture = tex;
+	out->sampler = sampler;
     out->glyphs = glyphs;
     out->glyph_count = h.glyph_count;
     out->ascent = h.ascent;
@@ -76,7 +104,9 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 void px_sdf_free(struct px_sdf_font_data* data) {
     if (!data) return;
 
-    glDeleteTextures(1, (GLuint*)&data->texture);
+	px_rs_destroy_texture(&data->texture);
+	px_rs_destroy_sampler(&data->sampler);
+    
     free(data->glyphs);
     memset(data, 0, sizeof(*data));
 }
@@ -107,8 +137,10 @@ const struct px_sdf_glyph* px_sdf_find_glyph(const PX_Font* font, uint32_t cp) {
     return NULL;
 }
 
-PheonixEngine_GPU_Handle px_sdf_get_texture(const PX_Font* font) {
-    if (!font || font->backend != PX_FONT_BACKEND_SDF)
-        return 0;
-    return font->impl.sdf.texture;
+PX_GPU_Handle px_sdf_get_texture(const PX_Font* font, PX_GPU_Handle* sampler_out) {
+    if (!font || !sampler_out) return 0;
+	if (font->backend != PX_FONT_BACKEND_SDF) return 0;
+
+	*sampler_out = font->impl.sdf.texture.sampler_handle;
+    return font->impl.sdf.texture.handle;
 }

@@ -4,6 +4,7 @@
 #define __PHEONIX_ENGINE__VERSION__ 0x0100
 
 #include <rendering-sys.h>
+#include <font.h>
 #include <window-sys.h>
 
 extern PX_Scene engine_3drenderer_main_scene;

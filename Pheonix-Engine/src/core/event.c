@@ -5,6 +5,7 @@
 #include <event-sys.h>
 #include <window-sys.h>
 #include <rendering-sys.h>
+#include <font.h>
 
 #define MAX_GLOBAL_SIGNALS 64
 

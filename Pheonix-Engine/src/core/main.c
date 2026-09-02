@@ -313,7 +313,7 @@ static void enginef_core_handle_gsignals(PX_Event_GSignal* signal, bool core_sig
             PX_Event_GSignal_3dHover s = signal->mouse_hover_on_3d;
             switch (s.id) {
                 case 1: {
-                    if (s.objType != OBJECT_3D_EDITOR_GIZMO) break;
+                    if (s.objType != PX_RS_OBJECT_3D_EDITOR_GIZMO) break;
                     engine_3drenderer_hover_on_gizmo = true;
                     break;
                 }
@@ -328,12 +328,12 @@ void enginef_init_3drenderer_main_scene(void) {
     PX_3D_Editor_Object gridlines = {
         .active = true,
         .name = "Grid Lines",
-        .type = OBJECT_3D_EDITOR_GRID,
+        .type = PX_RS_OBJECT_3D_EDITOR_GRID,
         .has_children = false,
         .static_object = true,
         .local_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .world_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
-        .ex_data_type = OBJECT_3D_EDITOR_GRID,
+        .ex_data_type = PX_RS_OBJECT_3D_EDITOR_GRID,
         .ex_data = &engine_3drenderer_editor_grid,
         .id = 0
     };
@@ -341,12 +341,12 @@ void enginef_init_3drenderer_main_scene(void) {
     PX_3D_Editor_Object gizmo = {
         .active = false,
         .name = "Test Gizmo",
-        .type = OBJECT_3D_EDITOR_GIZMO,
+        .type = PX_RS_OBJECT_3D_EDITOR_GIZMO,
         .has_children = false,
         .static_object = true,
         .local_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
         .world_transform = (PX_Transform3){.pos=(PX_Vector3){0, 0, 0}, .scale=(PX_Scale3){1, 1, 1}, .rot=(PX_Orientation3){.w=1}},
-        .ex_data_type = OBJECT_3D_EDITOR_GIZMO,
+        .ex_data_type = PX_RS_OBJECT_3D_EDITOR_GIZMO,
         .ex_data = &engine_3drenderer_hover_on_gizmo,
         .id = 1
     };
