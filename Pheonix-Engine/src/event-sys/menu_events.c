@@ -21,6 +21,10 @@ static bool fullscreened = false;
 
 // FILE Options
 static void handle_file_new(void) {
+	PX_EditorState* state = editor_get_state();
+	PX_EditorMode bmode = PX_EDITOR_MODE_3D;
+	if (state) bmode = state->current_mode;
+
 	for (size_t i = 0; i < load_ptr; i++) {
         PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
         if (obj->type == PX_RS_OBJECT_3D_TYPE_MESH) {
@@ -28,8 +32,9 @@ static void handle_file_new(void) {
         }
     }
 	load_ptr = 0;
-    editor_new_project(&engine_3drenderer_main_scene, "Untitled");
+    editor_new_project(&engine_3drenderer_main_scene, &engine_2drenderer_main_scene, "Untitled", bmode);
 	enginef_init_3drenderer_main_scene();
+	enginef_init_2drenderer_main_scene();
 }
 static void handle_file_open(void) {
     (void)px_ws_open_file_selector_dialog();

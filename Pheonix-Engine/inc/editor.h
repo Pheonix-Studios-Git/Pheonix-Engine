@@ -8,55 +8,27 @@
 
 #define PX_EDITOR_CUR_VERSION 1.0f
 
+typedef enum {
+	PX_EDITOR_MODE_3D,
+    PX_EDITOR_MODE_2D
+} PX_EditorMode;
+
 typedef struct {
     bool initialized;
-    float opengl_version; // Default = 4.0, Fallback = 2.0
+    float renderer_version;
     float editor_version;
 
     bool saved;
     char* project_dir;
     char* project_name;
 
-    PX_Scene* scene;
+	PX_EditorMode current_mode;
+
+    PX_Scene_3D* scene_3d;
+	PX_Scene_2D* scene_2d;
 } PX_EditorState;
 
-#pragma pack(push, 1)
-typedef struct {
-    long unsigned int name;
-} PX_PXProj_Material;
-#pragma pack(pop)
-
-#pragma pack(push, 1)
-typedef struct {
-    long unsigned int parent;
-    long unsigned int child;
-    long unsigned int next;
-    int child_count;
-
-    long unsigned int name;
-
-    PX_Transform3 transform;
-    PX_PXProj_Material material;
-    //PX_PXProj_Components components;
-    int component_count;
-} PX_PXProj_Object;
-#pragma pack(pop)
-
-#pragma pack(push, 1)
-typedef struct {
-    float opengl_version;
-    float editor_version;
-    float engine_version;
-    
-    long unsigned int project_dir;
-    long unsigned int project_name;
-
-    PX_PXProj_Object* objects;
-    int total_object_count;
-} PX_PXProj_Hdr;
-#pragma pack(pop)
-
-t_err_codes editor_new_project(PX_Scene* cScene, char* proj_name);
+t_err_codes editor_new_project(PX_Scene_3D* cScene3D, PX_Scene_2D* cScene2D, char* proj_name, PX_EditorMode base_mode);
 PX_EditorState* editor_get_state(void);
 void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
 void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font* font, float font_size, int xspacing, int yspacing);

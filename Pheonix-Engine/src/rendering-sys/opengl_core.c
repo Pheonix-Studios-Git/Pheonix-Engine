@@ -52,11 +52,11 @@ struct ui_renderer {
 
     GLuint blank_tex;
 
-    struct ui_vertex* vertices;
+    struct vertex_2d* vertices;
     size_t vertex_count;
     size_t vertex_capacity;
 
-    struct ui_batch batches[MAX_BATCHES];
+    struct batch_2d batches[MAX_BATCHES];
     size_t batch_count;
 
     int screen_w;
@@ -105,8 +105,8 @@ struct renderer_3d {
     GLuint flatDepthRBO;
 };
 
-static struct ui_renderer gr_ui_b = {0};
-struct ui_renderer* gr_gl_ui = &gr_ui_b;
+static struct ui_renderer gr_2d_b = {0};
+struct ui_renderer* gr_gl_2d = &gr_2d_b;
 
 static struct renderer_3d gr_3d_b = {0};
 struct renderer_3d* gr_gl_3d = &gr_3d_b;
@@ -159,6 +159,43 @@ static PX_Transform3 opengl_combine_transform3(PX_Transform3 parent, PX_Transfor
     return out;
 }
 
+static PX_Transform2 opengl_combine_transform2(PX_Transform2 parent, PX_Transform2 local) {
+    PX_Transform2 out = {0};
+
+    out.scale.w = parent.scale.w * local.scale.w;
+    out.scale.h = parent.scale.h * local.scale.h;
+
+    out.rot = parent.rot + local.rot;
+
+    float x = local.pos.x * (float)parent.scale.w;
+    float y = local.pos.y * (float)parent.scale.h;
+
+    float c = cosf(parent.rot);
+    float s = sinf(parent.rot);
+
+    float rotated_x = x * c - y * s;
+    float rotated_y = x * s + y * c;
+
+    out.pos.x = parent.pos.x + (int)roundf(rotated_x);
+    out.pos.y = parent.pos.y + (int)roundf(rotated_y);
+
+    return out;
+}
+
+static PX_Vector2 opengl_transform_point_2d(PX_Vector2 point, PX_Transform2 transform) {
+    float x = (float)point.x * (float)transform.scale.w;
+    float y = (float)point.y * (float)transform.scale.h;
+
+    float c = cosf(transform.rot);
+    float s = sinf(transform.rot);
+
+    PX_Vector2 out;
+
+    out.x = transform.pos.x + x * c - y * s;
+    out.y = transform.pos.y + x * s + y * c;
+    return out;
+}
+
 static char* read_shader(const char* name) {
 	if (!name) return NULL;
 
@@ -166,8 +203,11 @@ static char* read_shader(const char* name) {
     snprintf(path, sizeof(path), "shaders/%s", name);
 
     FILE* f = fopen(path, "rb");
-    if (!f)
-        return NULL;
+    if (!f) {
+		fprintf(stderr, "Failed to read shader file [%s : Vertex]\n", path);
+		perror("\tReason ");
+		return NULL;
+	}
 
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -176,6 +216,9 @@ static char* read_shader(const char* name) {
     char* src = (char*)malloc(size + 1);
     if (!src) {
         fclose(f);
+
+		fprintf(stderr, "Failed to allocate memory for reading shader file [%s : Vertex]\n", path);
+		perror("\tReason ");
         return NULL;
     }
 
@@ -212,11 +255,8 @@ static unsigned int pxgl_create_program(const char* vert, const char* frag) {
     char* frag_src = read_shader(frag);
 
     if (!vert_src || !frag_src) {
-        fprintf(stderr, "Failed to load shader files\n");
-        if (vert_src)
-            free(vert_src);
-        if (frag_src)
-            free(frag_src);
+        if (vert_src) free(vert_src);
+        if (frag_src) free(frag_src);
         return 0;
     }
 
@@ -226,8 +266,7 @@ static unsigned int pxgl_create_program(const char* vert, const char* frag) {
     free(vert_src);
     free(frag_src);
 
-    if (!vs || !fs)
-        return 0;
+    if (!vs || !fs) return 0;
 
     unsigned int program = glCreateProgram();
     glAttachShader(program, vs);
@@ -501,7 +540,7 @@ static GLenum pxgl_get_texture_address_mode(PX_TextureAddressMode mode) {
 	}
 }
 
-static void pxgl_ui_ortho(float left, float right, float bottom, float top, float* out_mat4) {
+static void pxgl_2d_ortho(float left, float right, float bottom, float top, float* out_mat4) {
 	if (!out_mat4) return;
 
     memset(out_mat4, 0, sizeof(float) * 16);
@@ -514,71 +553,79 @@ static void pxgl_ui_ortho(float left, float right, float bottom, float top, floa
     out_mat4[15] = 1.0f;
 }
 
-static void pxgl_ui_push_quad(PX_Vector2 pos, PX_Scale2 scale, PX_Color4 c) {
-    if (gr_gl_ui->vertex_count + 6 > gr_gl_ui->vertex_capacity)
-        return;
+static void pxgl_2d_push_quad(PX_Transform2 transform, PX_Color4 c, struct batch_2d* b) {
+    if (!b) return;
+    if (gr_gl_2d->vertex_count + 4 > gr_gl_2d->vertex_capacity) return;
 
-    struct ui_vertex* v = gr_gl_ui->vertices + gr_gl_ui->vertex_count;
-    float x2 = (float)pos.x + (float)scale.w;
-    float y2 = (float)pos.y + (float)scale.h;
+    memset(b, 0, sizeof(struct batch_2d));
 
-    v[0] = (struct ui_vertex){(float)pos.x, (float)pos.y, 0, 0, c.r, c.g, c.b, c.a};
-    v[1] = (struct ui_vertex){x2, (float)pos.y, 1, 0, c.r, c.g, c.b, c.a};
-    v[2] = (struct ui_vertex){x2, y2, 1, 1, c.r, c.g, c.b, c.a};
-    v[3] = (struct ui_vertex){(float)pos.x, y2, 0, 1, c.r, c.g, c.b, c.a};
- 
-    gr_gl_ui->vertex_count += 4;
+    b->type = BATCH_2D_PANEL;
+    b->vertex_offset = gr_gl_2d->vertex_count;
+    b->vertex_count = 4;
+
+    float c_rot = cosf(transform.rot);
+    float s_rot = sinf(transform.rot);
+
+	const float cx = transform.scale.w * 0.5f;
+    const float cy = transform.scale.h * 0.5f;
+
+    float corners[4][2] = {
+        {0.0f, 0.0f},
+        {transform.scale.w, 0.0f},
+        {transform.scale.w, transform.scale.h},
+        {0.0f, transform.scale.h}
+    };
+
+    struct vertex_2d* v = gr_gl_2d->vertices + gr_gl_2d->vertex_count;
+    for (int i = 0; i < 4; ++i) {
+        float x = corners[i][0] - cx;
+        float y = corners[i][1] - cy;
+
+        float rx = x * c_rot - y * s_rot;
+        float ry = x * s_rot + y * c_rot;
+
+        v[i] = (struct vertex_2d){
+            .x = transform.pos.x + cx + rx,
+            .y = transform.pos.y + cy + ry,
+            .u = (i == 1 || i == 2) ? 1.0f : 0.0f,
+            .v = (i >= 2) ? 1.0f : 0.0f,
+            .r = c.r,
+            .g = c.g,
+            .b = c.b,
+            .a = c.a
+        };
+    }
+
+    gr_gl_2d->vertex_count += 4;
 }
 
-static void pxgl_ui_push_glyph(float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
+static void pxgl_2d_push_glyph(float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
 	if (!g) return;
-    if (gr_gl_ui->vertex_count + 6 > gr_gl_ui->vertex_capacity) return;
+    if (gr_gl_2d->vertex_count + 6 > gr_gl_2d->vertex_capacity) return;
 
-    struct ui_vertex* v = gr_gl_ui->vertices + gr_gl_ui->vertex_count;
+    struct vertex_2d* v = gr_gl_2d->vertices + gr_gl_2d->vertex_count;
 
-    v[0] = (struct ui_vertex){x0, y0, g->u0, g->v0, c.r, c.g, c.b, c.a};
-    v[1] = (struct ui_vertex){x1, y0, g->u1, g->v0, c.r, c.g, c.b, c.a};
-    v[2] = (struct ui_vertex){x1, y1, g->u1, g->v1, c.r, c.g, c.b, c.a};
-    v[3] = (struct ui_vertex){x0, y1, g->u0, g->v1, c.r, c.g, c.b, c.a};
+    v[0] = (struct vertex_2d){x0, y0, g->u0, g->v0, c.r, c.g, c.b, c.a};
+    v[1] = (struct vertex_2d){x1, y0, g->u1, g->v0, c.r, c.g, c.b, c.a};
+    v[2] = (struct vertex_2d){x1, y1, g->u1, g->v1, c.r, c.g, c.b, c.a};
+    v[3] = (struct vertex_2d){x0, y1, g->u0, g->v1, c.r, c.g, c.b, c.a};
 
-    gr_gl_ui->vertex_count += 4;
+    gr_gl_2d->vertex_count += 4;
 }
 
-static void pxgl_ui_push_line(float x0, float y0, float x1, float y1, float thickness, PX_Color4 c) {
-    if (gr_gl_ui->vertex_count + 6 > gr_gl_ui->vertex_capacity)
-        return;
-
-    float dx = x1 - x0;
-    float dy = y1 - y0;
-    float len = sqrtf(dx*dx + dy*dy);
-    if (len == 0.0f) return;
-
-    dx /= len; dy /= len;
-    float px = -dy * thickness * 0.5f;
-    float py =  dx * thickness * 0.5f;
-
-    struct ui_vertex* v = gr_gl_ui->vertices + gr_gl_ui->vertex_count;
-    v[0] = (struct ui_vertex){x0 + px, y0 + py, 0, 0, c.r, c.g, c.b, c.a};
-    v[1] = (struct ui_vertex){x1 + px, y1 + py, 1, 0, c.r, c.g, c.b, c.a};
-    v[2] = (struct ui_vertex){x1 - px, y1 - py, 1, 1, c.r, c.g, c.b, c.a};
-    v[3] = (struct ui_vertex){x0 - px, y0 - py, 0, 1, c.r, c.g, c.b, c.a};
-
-    gr_gl_ui->vertex_count += 4;
-}
-
-static void pxgl_rs_internal_push_batch_ui(struct ui_batch* b) {
+static void pxgl_rs_internal_push_batch_2d(struct batch_2d* b) {
 	if (!b) return;
 
-    if (gr_gl_ui->batch_count > 0) {
-        struct ui_batch* last_b = &gr_gl_ui->batches[gr_gl_ui->batch_count - 1];
+    if (gr_gl_2d->batch_count > 0) {
+        struct batch_2d* last_b = &gr_gl_2d->batches[gr_gl_2d->batch_count - 1];
 
         if (last_b->type == b->type && last_b->texture == b->texture) {
-            if (b->type == UI_BATCH_PANEL) {
+            if (b->type == BATCH_2D_PANEL) {
                 if (b->corner_radius == last_b->corner_radius && b->noise == last_b->noise) {
                     last_b->vertex_count += b->vertex_count;
                     return;
                 }
-            } else if (b->type == UI_BATCH_TEXT) {
+            } else if (b->type == BATCH_2D_TEXT) {
                 if (b->text_sdf_width == last_b->text_sdf_width && b->text_outline_width == last_b->text_outline_width &&
                     (b->text_outline_color.r == last_b->text_outline_color.r &&
                     b->text_outline_color.g == last_b->text_outline_color.g &&
@@ -592,12 +639,12 @@ static void pxgl_rs_internal_push_batch_ui(struct ui_batch* b) {
         }
     }
 
-    if (gr_gl_ui->batch_count < MAX_BATCHES) {
-        memcpy(&gr_gl_ui->batches[gr_gl_ui->batch_count++], b, sizeof(struct ui_batch));
+    if (gr_gl_2d->batch_count < MAX_BATCHES) {
+        memcpy(&gr_gl_2d->batches[gr_gl_2d->batch_count++], b, sizeof(struct batch_2d));
     }
 }
 
-static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct batch_3d* b) {
+static void push_3d_grid(PX_EditorGrid_3D* grid, PX_Transform3 transform, struct batch_3d* b) {
 	if (!b) return;
 
     memset(b, 0, sizeof(struct batch_3d));
@@ -613,8 +660,8 @@ static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct ba
     const float spacing = grid->spacing;
     const float half = grid->half_size;
 
-    float cam_x = floorf(gscene_cam.position[0] / spacing) * spacing;
-    float cam_z = floorf(gscene_cam.position[2] / spacing) * spacing;
+    float cam_x = floorf(gscene_cam_3d.position[0] / spacing) * spacing;
+    float cam_z = floorf(gscene_cam_3d.position[2] / spacing) * spacing;
 
     float extent = half * spacing;
 
@@ -672,14 +719,91 @@ static void push_3d_grid(PX_EditorGrid* grid, PX_Transform3 transform, struct ba
     b->index_count = gr_gl_3d->index_count - b->index_offset;
 }
 
+static void push_2d_grid(PX_EditorGrid_2D* grid, PX_Transform2 transform, struct batch_2d* b) {
+    if (!grid || !b) return;
+    memset(b, 0, sizeof(struct batch_2d));
+
+    b->type = BATCH_2D_LINE;
+	b->line_width = 1.0f;
+    b->vertex_offset = gr_gl_2d->vertex_count;
+
+    const float spacing = grid->spacing;
+    const float half = grid->half_size;
+
+    float cam_x = floorf(gscene_cam_2d.position[0] / spacing) * spacing;
+    float cam_y = floorf(gscene_cam_2d.position[1] / spacing) * spacing;
+
+    float extent = half * spacing;
+
+    for (float i = -half; i <= half; i++) {
+        if (gr_gl_2d->vertex_count + 4 >= gr_gl_2d->vertex_capacity) break;
+
+        float p = i * spacing;
+
+		PX_Vector2 v0_pos = opengl_transform_point_2d((PX_Vector2){cam_x + p, cam_y - extent}, transform);
+        PX_Vector2 v1_pos = opengl_transform_point_2d((PX_Vector2){cam_x + p, cam_y + extent}, transform);
+		PX_Vector2 v2_pos = opengl_transform_point_2d((PX_Vector2){cam_x - extent, cam_y + p}, transform);
+		PX_Vector2 v3_pos = opengl_transform_point_2d((PX_Vector2){cam_x + extent, cam_y + p}, transform);
+
+        struct vertex_2d v0 = {
+            .x = v0_pos.x,
+            .y = v0_pos.y,
+            .u = 0.0f,
+            .v = 0.0f,
+            .r = grid->color.r,
+            .g = grid->color.g,
+            .b = grid->color.b,
+            .a = grid->color.a
+        };
+
+        struct vertex_2d v1 = {
+            .x = v1_pos.x,
+            .y = v1_pos.y,
+            .u = 0.0f,
+            .v = 0.0f,
+            .r = grid->color.r,
+            .g = grid->color.g,
+            .b = grid->color.b,
+            .a = grid->color.a
+        };
+
+        struct vertex_2d v2 = {
+            .x = v2_pos.x,
+            .y = v2_pos.y,
+            .u = 0.0f,
+            .v = 0.0f,
+            .r = grid->color.r,
+            .g = grid->color.g,
+            .b = grid->color.b,
+            .a = grid->color.a
+        };
+
+        struct vertex_2d v3 = {
+            .x = v3_pos.x,
+            .y = v3_pos.y,
+            .u = 0.0f,
+            .v = 0.0f,
+            .r = grid->color.r,
+            .g = grid->color.g,
+            .b = grid->color.b,
+            .a = grid->color.a
+        };
+
+        gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v0;
+        gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v1;
+        gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v2;
+        gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v3;
+    }
+
+    b->vertex_count = gr_gl_2d->vertex_count - b->vertex_offset;
+}
+
 static void push_3d_line(PX_Color4 color, PX_Transform3 transform, PX_Vector3 endpos, float width, struct batch_3d* b) {
+	if (!b) return;
     memset(b, 0, sizeof(struct batch_3d));
    
-    if (gr_gl_3d->vertex_count + 2 >= gr_gl_3d->vertex_capacity)
-        return;
-
-    if (gr_gl_3d->index_count + 2 >= gr_gl_3d->index_capacity)
-        return;
+    if (gr_gl_3d->vertex_count + 2 >= gr_gl_3d->vertex_capacity) return;
+    if (gr_gl_3d->index_count + 2 >= gr_gl_3d->index_capacity) return;
    
     memcpy(&b->transform, &transform, sizeof(PX_Transform3));
     
@@ -714,6 +838,44 @@ static void push_3d_line(PX_Color4 color, PX_Transform3 transform, PX_Vector3 en
     b->index_count = gr_gl_3d->index_count - b->index_offset;
 }
 
+static void push_2d_line(PX_Color4 color, PX_Vector2 startpos, PX_Vector2 endpos, float width, struct batch_2d* b) {
+	if (!b) return;
+	if (gr_gl_2d->vertex_count + 2 >= gr_gl_2d->vertex_capacity) return;
+	
+    memset(b, 0, sizeof(struct batch_2d));
+	b->type = BATCH_2D_LINE;
+	b->line_width = width;
+	b->vertex_offset = gr_gl_2d->vertex_count;
+    uint32_t base = (uint32_t)gr_gl_2d->vertex_count;
+
+    struct vertex_2d v0 = {
+        .x = startpos.x,
+        .y = startpos.y,
+        .u = 0.0f,
+        .v = 0.0f,
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a
+    };
+
+    struct vertex_2d v1 = {
+        .x = endpos.x,
+        .y = endpos.y,
+        .u = 0.0f,
+        .v = 0.0f,
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a
+    };
+
+    gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v0;
+    gr_gl_2d->vertices[gr_gl_2d->vertex_count++] = v1;
+
+    b->vertex_count = gr_gl_2d->vertex_count - b->vertex_offset;
+}
+
 static void pxgl_rs_internal_push_batch_3d(struct batch_3d* b) {
     if (gr_gl_3d->batch_count >= MAX_BATCHES)
         return;
@@ -731,43 +893,43 @@ t_err_codes px_rs_gl_init(void) {
     return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_gl_init_ui(PX_Scale2 screen_scale) {
-    memset(gr_gl_ui, 0, sizeof(*gr_gl_ui));
+t_err_codes px_rs_gl_init_2d(PX_Scale2 screen_scale) {
+    memset(gr_gl_2d, 0, sizeof(*gr_gl_2d));
 
-    gr_gl_ui->program = pxgl_create_program("ui_vertex.glsl", "ui_fragment.glsl");
-    if (gr_gl_ui->program == 0)
+    gr_gl_2d->program = pxgl_create_program("2d_vertex.glsl", "2d_fragment.glsl");
+    if (gr_gl_2d->program == 0)
         return ERR_GL_PROGRAM_CREATION_FAILED;
-    gr_gl_ui->text_program = pxgl_create_program("ui_vertex.glsl", "ui_textfrag.glsl");
-    if (gr_gl_ui->text_program == 0) {
-        glDeleteProgram(gr_gl_ui->program);
+    gr_gl_2d->text_program = pxgl_create_program("2d_vertex.glsl", "2d_textfrag.glsl");
+    if (gr_gl_2d->text_program == 0) {
+        glDeleteProgram(gr_gl_2d->program);
         return ERR_GL_PROGRAM_CREATION_FAILED;
     } 
 
     // Core UI Programs
-    gr_gl_ui->uni_projection = glGetUniformLocation(gr_gl_ui->program, "u_projection");
-    gr_gl_ui->uni_size = glGetUniformLocation(gr_gl_ui->program, "u_size");
-    gr_gl_ui->uni_corner_radius = glGetUniformLocation(gr_gl_ui->program, "u_corner_radius");
-    gr_gl_ui->uni_noise = glGetUniformLocation(gr_gl_ui->program, "u_noise");
-    gr_gl_ui->uni_texel_size = glGetUniformLocation(gr_gl_ui->program, "u_texel_size");
-    gr_gl_ui->uni_texture = glGetUniformLocation(gr_gl_ui->program, "u_texture");
-    gr_gl_ui->attr_pos = glGetAttribLocation(gr_gl_ui->program, "a_pos");
-    gr_gl_ui->attr_uv = glGetAttribLocation(gr_gl_ui->program, "a_uv");
-    gr_gl_ui->attr_color = glGetAttribLocation(gr_gl_ui->program, "a_color");
+    gr_gl_2d->uni_projection = glGetUniformLocation(gr_gl_2d->program, "u_projection");
+    gr_gl_2d->uni_size = glGetUniformLocation(gr_gl_2d->program, "u_size");
+    gr_gl_2d->uni_corner_radius = glGetUniformLocation(gr_gl_2d->program, "u_corner_radius");
+    gr_gl_2d->uni_noise = glGetUniformLocation(gr_gl_2d->program, "u_noise");
+    gr_gl_2d->uni_texel_size = glGetUniformLocation(gr_gl_2d->program, "u_texel_size");
+    gr_gl_2d->uni_texture = glGetUniformLocation(gr_gl_2d->program, "u_texture");
+    gr_gl_2d->attr_pos = glGetAttribLocation(gr_gl_2d->program, "a_pos");
+    gr_gl_2d->attr_uv = glGetAttribLocation(gr_gl_2d->program, "a_uv");
+    gr_gl_2d->attr_color = glGetAttribLocation(gr_gl_2d->program, "a_color");
     // Text Programs
-    gr_gl_ui->text_uni_projection = glGetUniformLocation(gr_gl_ui->text_program, "u_projection");
-    gr_gl_ui->text_uni_texture = glGetUniformLocation(gr_gl_ui->text_program, "u_font_text");
-    gr_gl_ui->text_uni_sdf_width = glGetUniformLocation(gr_gl_ui->text_program, "u_sdf_width");
-    gr_gl_ui->text_uni_pixel_height = glGetUniformLocation(gr_gl_ui->text_program, "u_pixel_height");
-    gr_gl_ui->text_uni_outline_width = glGetUniformLocation(gr_gl_ui->text_program, "u_outline_width");
-    gr_gl_ui->text_uni_outline_color = glGetUniformLocation(gr_gl_ui->text_program, "u_outline_color");
-    gr_gl_ui->text_attr_pos = glGetAttribLocation(gr_gl_ui->text_program, "a_pos");
-    gr_gl_ui->text_attr_uv = glGetAttribLocation(gr_gl_ui->text_program, "a_uv");
-    gr_gl_ui->text_attr_color = glGetAttribLocation(gr_gl_ui->text_program, "a_color");
+    gr_gl_2d->text_uni_projection = glGetUniformLocation(gr_gl_2d->text_program, "u_projection");
+    gr_gl_2d->text_uni_texture = glGetUniformLocation(gr_gl_2d->text_program, "u_font_text");
+    gr_gl_2d->text_uni_sdf_width = glGetUniformLocation(gr_gl_2d->text_program, "u_sdf_width");
+    gr_gl_2d->text_uni_pixel_height = glGetUniformLocation(gr_gl_2d->text_program, "u_pixel_height");
+    gr_gl_2d->text_uni_outline_width = glGetUniformLocation(gr_gl_2d->text_program, "u_outline_width");
+    gr_gl_2d->text_uni_outline_color = glGetUniformLocation(gr_gl_2d->text_program, "u_outline_color");
+    gr_gl_2d->text_attr_pos = glGetAttribLocation(gr_gl_2d->text_program, "a_pos");
+    gr_gl_2d->text_attr_uv = glGetAttribLocation(gr_gl_2d->text_program, "a_uv");
+    gr_gl_2d->text_attr_color = glGetAttribLocation(gr_gl_2d->text_program, "a_color");
 
     // Textures Pre-made
     uint8_t white_pixel[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-    glGenTextures(1, &gr_gl_ui->blank_tex);
-    glBindTexture(GL_TEXTURE_2D, gr_gl_ui->blank_tex);
+    glGenTextures(1, &gr_gl_2d->blank_tex);
+    glBindTexture(GL_TEXTURE_2D, gr_gl_2d->blank_tex);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
@@ -786,13 +948,13 @@ t_err_codes px_rs_gl_init_ui(PX_Scale2 screen_scale) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glGenVertexArrays(1, &gr_gl_ui->vao);
-    glGenBuffers(1, &gr_gl_ui->vbo);
-    glGenBuffers(1, &gr_gl_ui->ebo);
+    glGenVertexArrays(1, &gr_gl_2d->vao);
+    glGenBuffers(1, &gr_gl_2d->vbo);
+    glGenBuffers(1, &gr_gl_2d->ebo);
 
-    glBindVertexArray(gr_gl_ui->vao);
-    glBindBuffer(GL_ARRAY_BUFFER, gr_gl_ui->vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_gl_ui->ebo);
+    glBindVertexArray(gr_gl_2d->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_gl_2d->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_gl_2d->ebo);
 
     unsigned short indices[MAX_VERTEX_COUNT / 4 * 6];
     for (size_t i = 0, v = 0; i < (MAX_VERTEX_COUNT / 4 * 6); i += 6, v += 4) {
@@ -801,15 +963,15 @@ t_err_codes px_rs_gl_init_ui(PX_Scale2 screen_scale) {
     }
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    gr_gl_ui->vertex_capacity = MAX_VERTEX_COUNT;
-    gr_gl_ui->vertices = (struct ui_vertex*)malloc(sizeof(struct ui_vertex) * gr_gl_ui->vertex_capacity);
-    if (!gr_gl_ui->vertices) {
+    gr_gl_2d->vertex_capacity = MAX_VERTEX_COUNT;
+    gr_gl_2d->vertices = (struct vertex_2d*)malloc(sizeof(struct vertex_2d) * gr_gl_2d->vertex_capacity);
+    if (!gr_gl_2d->vertices) {
         return ERR_ALLOC_FAILED;
     }
 
-    gr_gl_ui->screen_w = screen_scale.w;
-    gr_gl_ui->screen_h = screen_scale.h;
-    gr_gl_ui->initialized = true;
+    gr_gl_2d->screen_w = screen_scale.w;
+    gr_gl_2d->screen_h = screen_scale.h;
+    gr_gl_2d->initialized = true;
 
     glViewport(0, 0, screen_scale.w, screen_scale.h);
 
@@ -817,23 +979,23 @@ t_err_codes px_rs_gl_init_ui(PX_Scale2 screen_scale) {
 }
 
 t_err_codes px_rs_gl_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
-    gscene_cam.position[0] = 8.0f;
-    gscene_cam.position[1] = 8.0f;
-    gscene_cam.position[2] = 8.0f;
+    gscene_cam_3d.position[0] = 8.0f;
+    gscene_cam_3d.position[1] = 8.0f;
+    gscene_cam_3d.position[2] = 8.0f;
 
-    gscene_cam.target[0] = 0.0f;
-    gscene_cam.target[1] = 0.0f;
-    gscene_cam.target[2] = 0.0f;
+    gscene_cam_3d.target[0] = 0.0f;
+    gscene_cam_3d.target[1] = 0.0f;
+    gscene_cam_3d.target[2] = 0.0f;
 
-    gscene_cam.up[0] = 0.0f;
-    gscene_cam.up[1] = 1.0f;
-    gscene_cam.up[2] = 0.0f;
+    gscene_cam_3d.up[0] = 0.0f;
+    gscene_cam_3d.up[1] = 1.0f;
+    gscene_cam_3d.up[2] = 0.0f;
 
-    gscene_cam.yaw = -90.0f;
-    gscene_cam.pitch = -25.0f;
+    gscene_cam_3d.yaw = -90.0f;
+    gscene_cam_3d.pitch = -25.0f;
 
-    gscene_cam.move_speed = 0.1f;
-    gscene_cam.mouse_sens = 0.1f;
+    gscene_cam_3d.move_speed = 0.1f;
+    gscene_cam_3d.mouse_sens = 0.1f;
 
     memset(gr_gl_3d, 0, sizeof(*gr_gl_3d));
 
@@ -966,20 +1128,20 @@ t_err_codes px_rs_gl_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     return ERR_SUCCESS;
 }
 
-void px_rs_gl_shutdown_ui(void) {
-    if (!gr_gl_ui->initialized)
+void px_rs_gl_shutdown_2d(void) {
+    if (!gr_gl_2d->initialized)
         return;
 
-    if (gr_gl_ui->blank_tex) glDeleteTextures(1, &gr_gl_ui->blank_tex);
+    if (gr_gl_2d->blank_tex) glDeleteTextures(1, &gr_gl_2d->blank_tex);
 
-    if (gr_gl_ui->vbo) glDeleteBuffers(1, &gr_gl_ui->vbo);
-    if (gr_gl_ui->vao) glDeleteVertexArrays(1, &gr_gl_ui->vao);
-    if (gr_gl_ui->ebo) glDeleteBuffers(1, &gr_gl_ui->ebo);
-    if (gr_gl_ui->program) glDeleteProgram(gr_gl_ui->program);
-    if (gr_gl_ui->text_program) glDeleteProgram(gr_gl_ui->text_program);
+    if (gr_gl_2d->vbo) glDeleteBuffers(1, &gr_gl_2d->vbo);
+    if (gr_gl_2d->vao) glDeleteVertexArrays(1, &gr_gl_2d->vao);
+    if (gr_gl_2d->ebo) glDeleteBuffers(1, &gr_gl_2d->ebo);
+    if (gr_gl_2d->program) glDeleteProgram(gr_gl_2d->program);
+    if (gr_gl_2d->text_program) glDeleteProgram(gr_gl_2d->text_program);
 
-    if (gr_gl_ui->vertices) free(gr_gl_ui->vertices);
-    memset(gr_gl_ui, 0, sizeof(*gr_gl_ui));
+    if (gr_gl_2d->vertices) free(gr_gl_2d->vertices);
+    memset(gr_gl_2d, 0, sizeof(*gr_gl_2d));
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE0, 0);
@@ -1013,40 +1175,46 @@ void px_rs_gl_shutdown_3d(void) {
 }
 
 void px_rs_gl_shutdown(void) {
-    px_rs_gl_shutdown_ui();
+    px_rs_gl_shutdown_2d();
     px_rs_gl_shutdown_3d();
 }
 
 void px_rs_gl_frame_start(void) {
-    gr_gl_ui->vertex_count = 0;
-    gr_gl_ui->batch_count = 0;
+    gr_gl_2d->vertex_count = 0;
+    gr_gl_2d->batch_count = 0;
     
     gr_gl_3d->vertex_count = 0;
     gr_gl_3d->index_count = 0;
     gr_gl_3d->batch_count = 0;
 }
 
-void px_rs_gl_ui_frame_end(void) {
-    if (gr_gl_ui->vertex_count <= 0)
-        return;
+void px_rs_gl_2d_frame_end(void) {
+    if (gr_gl_2d->vertex_count <= 0) return;
 
-    glBindBuffer(GL_ARRAY_BUFFER, gr_gl_ui->vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, gr_gl_2d->vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        sizeof(struct ui_vertex) * gr_gl_ui->vertex_count,
-        gr_gl_ui->vertices,
+        sizeof(struct vertex_2d) * gr_gl_2d->vertex_count,
+        gr_gl_2d->vertices,
         GL_DYNAMIC_DRAW
     );
 
     float proj[16];
-    pxgl_ui_ortho(0.0f, (float)gr_gl_ui->screen_w, 0.0f, (float)gr_gl_ui->screen_h, proj);
+    pxgl_2d_ortho(0.0f, (float)gr_gl_2d->screen_w, 0.0f, (float)gr_gl_2d->screen_h, proj);
 
-    glBindVertexArray(gr_gl_ui->vao);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_gl_ui->ebo);
+    glBindVertexArray(gr_gl_2d->vao);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gr_gl_2d->ebo);
 
     unsigned int old_program = 0;
-    for (size_t i = 0; i < gr_gl_ui->batch_count; i++) {
-        struct ui_batch* b = &gr_gl_ui->batches[i];
+	GLuint curFBO = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&curFBO);
+    bool pure_color_enabled = false;
+
+	float oldWidth = 1.0f;
+    glLineWidth(oldWidth);
+
+    for (size_t i = 0; i < gr_gl_2d->batch_count; i++) {
+        struct batch_2d* b = &gr_gl_2d->batches[i];
         if (b->vertex_count <= 0) continue;
 
         unsigned int program = 0;
@@ -1054,81 +1222,112 @@ void px_rs_gl_ui_frame_end(void) {
         int attr_uv = 0;
         int attr_color = 0;
 
-        if (b->type == UI_BATCH_TEXT)
-            program = gr_gl_ui->text_program;
-        else
-            program = gr_gl_ui->program;
-        
+        if (b->type == BATCH_2D_TEXT) program = gr_gl_2d->text_program;
+        else program = gr_gl_2d->program;
         if (program != old_program) glUseProgram(program);
 
+        if (b->switch_fbo && curFBO != (GLuint)b->fbo) {
+            glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)b->fbo);
+            glViewport(b->fbo_x, b->fbo_y, b->fbo_w, b->fbo_h);
+			GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+    		glDrawBuffers(1, &drawBuf);
+            curFBO = (GLuint)b->fbo;
+        } else if (!b->switch_fbo && curFBO != 0) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, gr_gl_2d->screen_w, gr_gl_2d->screen_h);
+            curFBO = 0;
+        }
+
+        if (b->pure_color) {
+            glDisable(GL_BLEND);
+            glDisable(GL_DITHER);
+            glDisable(GL_MULTISAMPLE);
+            glDisable(GL_LINE_SMOOTH);
+            pure_color_enabled = true;
+        } else if (pure_color_enabled) {
+            glEnable(GL_BLEND);
+            glEnable(GL_DITHER);
+            glEnable(GL_MULTISAMPLE);
+            glEnable(GL_LINE_SMOOTH);
+            pure_color_enabled = false;
+        }
+
         switch (b->type) {
-            case UI_BATCH_PANEL: {
-                glUniformMatrix4fv(gr_gl_ui->uni_projection, 1, GL_FALSE, proj);
-                glUniform2f(gr_gl_ui->uni_size, b->size.w, b->size.h);
-                glUniform2f(gr_gl_ui->uni_texel_size, b->texel_size.w, b->texel_size.h);
-                glUniform1f(gr_gl_ui->uni_corner_radius, b->corner_radius);
-                glUniform1f(gr_gl_ui->uni_noise, b->noise);
+            case BATCH_2D_PANEL: {
+                glUniformMatrix4fv(gr_gl_2d->uni_projection, 1, GL_FALSE, proj);
+                glUniform2f(gr_gl_2d->uni_size, b->size.w, b->size.h);
+                glUniform2f(gr_gl_2d->uni_texel_size, b->texel_size.w, b->texel_size.h);
+                glUniform1f(gr_gl_2d->uni_corner_radius, b->corner_radius);
+                glUniform1f(gr_gl_2d->uni_noise, b->noise);
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
 				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
-                glUniform1i(gr_gl_ui->uni_texture, 0);
+                glUniform1i(gr_gl_2d->uni_texture, 0);
 
-                attr_pos = gr_gl_ui->attr_pos;
-                attr_uv = gr_gl_ui->attr_uv;
-                attr_color = gr_gl_ui->attr_color;
+                attr_pos = gr_gl_2d->attr_pos;
+                attr_uv = gr_gl_2d->attr_uv;
+                attr_color = gr_gl_2d->attr_color;
                 break;
             }
-            case UI_BATCH_TEXT: {
-                glUniformMatrix4fv(gr_gl_ui->text_uni_projection, 1, GL_FALSE, proj);
-                glUniform1f(gr_gl_ui->text_uni_sdf_width, b->text_sdf_width);
-                glUniform1f(gr_gl_ui->text_uni_pixel_height, b->text_pixel_height);
-                glUniform1f(gr_gl_ui->text_uni_outline_width, b->text_outline_width);
-                glUniform4f(gr_gl_ui->text_uni_outline_color, (float)b->text_outline_color.r, (float)b->text_outline_color.g, (float)b->text_outline_color.b, (float)b->text_outline_color.a);
+            case BATCH_2D_TEXT: {
+                glUniformMatrix4fv(gr_gl_2d->text_uni_projection, 1, GL_FALSE, proj);
+                glUniform1f(gr_gl_2d->text_uni_sdf_width, b->text_sdf_width);
+                glUniform1f(gr_gl_2d->text_uni_pixel_height, b->text_pixel_height);
+                glUniform1f(gr_gl_2d->text_uni_outline_width, b->text_outline_width);
+                glUniform4f(gr_gl_2d->text_uni_outline_color, (float)b->text_outline_color.r, (float)b->text_outline_color.g, (float)b->text_outline_color.b, (float)b->text_outline_color.a);
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
 				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
-                glUniform1i(gr_gl_ui->text_uni_texture, 0);
+                glUniform1i(gr_gl_2d->text_uni_texture, 0);
 
-                attr_pos = gr_gl_ui->text_attr_pos;
-                attr_uv = gr_gl_ui->text_attr_uv;
-                attr_color = gr_gl_ui->text_attr_color;
+                attr_pos = gr_gl_2d->text_attr_pos;
+                attr_uv = gr_gl_2d->text_attr_uv;
+                attr_color = gr_gl_2d->text_attr_color;
                 break;
             }
-            case UI_BATCH_LINE: {
-                glUniformMatrix4fv(gr_gl_ui->uni_projection, 1, GL_FALSE, proj);
-                glUniform2f(gr_gl_ui->uni_size, 0, 0);
-                glUniform2f(gr_gl_ui->uni_texel_size, 1, 1);
-                glUniform1f(gr_gl_ui->uni_corner_radius, 0.0f);
-                glUniform1f(gr_gl_ui->uni_noise, 0.0f);
+            case BATCH_2D_LINE: {
+                glUniformMatrix4fv(gr_gl_2d->uni_projection, 1, GL_FALSE, proj);
+                glUniform2f(gr_gl_2d->uni_size, 0, 0);
+                glUniform2f(gr_gl_2d->uni_texel_size, 1, 1);
+                glUniform1f(gr_gl_2d->uni_corner_radius, 0.0f);
+                glUniform1f(gr_gl_2d->uni_noise, 0.0f);
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, (GLuint)b->texture);
 				if (b->sampler != PX_RS_GPU_INVALID_HANDLE) glBindSampler(0, (GLuint)b->sampler);
-                glUniform1i(gr_gl_ui->uni_texture, 0);
+                glUniform1i(gr_gl_2d->uni_texture, 0);
 
-                attr_pos = gr_gl_ui->attr_pos;
-                attr_uv = gr_gl_ui->attr_uv;
-                attr_color = gr_gl_ui->attr_color;
+                attr_pos = gr_gl_2d->attr_pos;
+                attr_uv = gr_gl_2d->attr_uv;
+                attr_color = gr_gl_2d->attr_color;
                 break;
             }
             default: continue;
         }
 
-        uintptr_t base_offset = (uintptr_t)b->vertex_offset * sizeof(struct ui_vertex);
-        int stride = sizeof(struct ui_vertex);
+        uintptr_t base_offset = (uintptr_t)b->vertex_offset * sizeof(struct vertex_2d);
+        int stride = sizeof(struct vertex_2d);
 
         glEnableVertexAttribArray(attr_pos);
         glEnableVertexAttribArray(attr_uv);
         glEnableVertexAttribArray(attr_color);
 
-        glVertexAttribPointer(attr_pos, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct ui_vertex, x)));
-        glVertexAttribPointer(attr_uv, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct ui_vertex, u)));
-        glVertexAttribPointer(attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(base_offset + offsetof(struct ui_vertex, r)));
+        glVertexAttribPointer(attr_pos, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct vertex_2d, x)));
+        glVertexAttribPointer(attr_uv, 2, GL_FLOAT, GL_FALSE, stride, (void*)(base_offset + offsetof(struct vertex_2d, u)));
+        glVertexAttribPointer(attr_color, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(base_offset + offsetof(struct vertex_2d, r)));
 
-        int index_count = (b->vertex_count / 4) * 6;
-        glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_SHORT, (void*)0);
+        if (b->type == BATCH_2D_LINE) {
+			if (b->line_width != oldWidth) {
+				oldWidth = b->line_width;
+				glLineWidth(b->line_width);
+			}
+			glDrawArrays(GL_LINES, b->vertex_offset, b->vertex_count);
+		} else {
+			int index_count = (b->vertex_count / 4) * 6;
+			glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_SHORT, (void*)0);
+		}
 
         glDisableVertexAttribArray(attr_pos);
         glDisableVertexAttribArray(attr_uv);
@@ -1141,8 +1340,7 @@ void px_rs_gl_ui_frame_end(void) {
 }
 
 void px_rs_gl_3d_frame_end(void) {
-    if (gr_gl_3d->vertex_count <= 0)
-        return;
+    if (gr_gl_3d->vertex_count <= 0) return;
 
     glBindBuffer(GL_ARRAY_BUFFER, gr_gl_3d->vbo);
     glBufferData(
@@ -1165,14 +1363,14 @@ void px_rs_gl_3d_frame_end(void) {
     glm_perspective(glm_rad(70.0f), (float)gr_gl_3d->screen_w / (float)gr_gl_3d->screen_h, 0.1f, 1000.0f, proj);
     
     vec3 forward;
-    forward[0] = cos(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
-    forward[1] = sin(glm_rad(gscene_cam.pitch));
-    forward[2] = sin(glm_rad(gscene_cam.yaw)) * cos(glm_rad(gscene_cam.pitch));
+    forward[0] = cos(glm_rad(gscene_cam_3d.yaw)) * cos(glm_rad(gscene_cam_3d.pitch));
+    forward[1] = sin(glm_rad(gscene_cam_3d.pitch));
+    forward[2] = sin(glm_rad(gscene_cam_3d.yaw)) * cos(glm_rad(gscene_cam_3d.pitch));
     glm_normalize(forward);
 
     vec3 target;
-    glm_vec3_add(gscene_cam.position, forward, target);
-    glm_lookat(gscene_cam.position, target, gscene_cam.up, view);
+    glm_vec3_add(gscene_cam_3d.position, forward, target);
+    glm_lookat(gscene_cam_3d.position, target, gscene_cam_3d.up, view);
 
     glBindVertexArray(gr_gl_3d->vao);
     glBindBuffer(GL_ARRAY_BUFFER, gr_gl_3d->vbo);
@@ -1338,26 +1536,24 @@ void px_rs_gl_frame_end(void) {
     px_rs_gl_3d_frame_update();
     px_rs_gl_3d_frame_end();
 
-    px_rs_gl_ui_frame_update();
-    px_rs_gl_ui_frame_end();
+    px_rs_gl_2d_frame_update();
+    px_rs_gl_2d_frame_end();
 }
 
 t_err_codes px_rs_gl_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius) {
-    int start_vertex = gr_gl_ui->vertex_count;
-    pxgl_ui_push_quad(tran.pos, tran.scale, color);
-    int vertex_count = gr_gl_ui->vertex_count - start_vertex;
+	struct batch_2d b = {0};
+    pxgl_2d_push_quad(tran, color, &b);
 
-    struct ui_batch b = {0};
-    b.type = UI_BATCH_PANEL;
+    b.type = BATCH_2D_PANEL;
     b.size = tran.scale;
     b.texel_size = (PX_Scale2){1, 1};
     b.corner_radius = cradius;
     b.noise = noise;
-    b.texture = (PX_GPU_Handle)gr_gl_ui->blank_tex;
-    b.vertex_count = vertex_count;
-    b.vertex_offset = start_vertex;
+    b.texture = (PX_GPU_Handle)gr_gl_2d->blank_tex;
+	b.pure_color = false;
+	b.switch_fbo = false;
 
-    pxgl_rs_internal_push_batch_ui(&b);
+    pxgl_rs_internal_push_batch_2d(&b);
 
     return ERR_SUCCESS;
 }
@@ -1365,7 +1561,7 @@ t_err_codes px_rs_gl_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise
 t_err_codes px_rs_gl_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
 	if (!text) return ERR_INVALID_ARGUMENTS;
 
-    int start_vertex = gr_gl_ui->vertex_count;
+    int start_vertex = gr_gl_2d->vertex_count;
     float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
 
     float pen_x = pos.x;
@@ -1381,7 +1577,7 @@ t_err_codes px_rs_gl_render_text(const char* text, float pixel_height, PX_Vector
         float x0 = pen_x + g->bearing_x * scale;
         float x1 = x0 + g->width * scale;
 
-        pxgl_ui_push_glyph(
+        pxgl_2d_push_glyph(
             x0,
             y0,
             x1,
@@ -1392,42 +1588,42 @@ t_err_codes px_rs_gl_render_text(const char* text, float pixel_height, PX_Vector
 
         pen_x += g->advance * scale;
     }
-    int vertex_count = gr_gl_ui->vertex_count - start_vertex;
+    int vertex_count = gr_gl_2d->vertex_count - start_vertex;
 
     float sdf_width = px_sdf_range(font) / pixel_height;
     sdf_width = fmaxf(0.015f, fminf(sdf_width, 0.03));
 
-    struct ui_batch b = {0};
-    b.type = UI_BATCH_TEXT;
+    struct batch_2d b = {0};
+    b.type = BATCH_2D_TEXT;
     b.text_sdf_width = sdf_width;
     b.text_pixel_height = pixel_height;
     b.text_outline_width = sdf_width * 2.0f;
     b.text_outline_color = (PX_Color4){0x00, 0x00, 0x00, 0xFF};
     b.texture = px_sdf_get_texture(font, &b.sampler);
+	b.pure_color = false;
+	b.switch_fbo = false;
     b.vertex_count = vertex_count;
     b.vertex_offset = start_vertex;
 
-    pxgl_rs_internal_push_batch_ui(&b);
+    pxgl_rs_internal_push_batch_2d(&b);
 
     return ERR_SUCCESS;
 }
 
 t_err_codes px_rs_gl_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color) {
-    int start_vertex = gr_gl_ui->vertex_count;
-    pxgl_ui_push_line(start.x, start.y, end.x, end.y, thickness, color);
-    int vertex_count = gr_gl_ui->vertex_count - start_vertex;
+	struct batch_2d b = {0};
+    push_2d_line(color, start, end, thickness, &b);
 
-    struct ui_batch b = {0};
-    b.type = UI_BATCH_LINE;
+    b.type = BATCH_2D_LINE;
     b.size = (PX_Scale2){0,0};
     b.texel_size = (PX_Scale2){1,1};
-    b.texture = (PX_GPU_Handle)gr_gl_ui->blank_tex;
+    b.texture = (PX_GPU_Handle)gr_gl_2d->blank_tex;
     b.noise = 0.0f;
     b.corner_radius = 0.0f;
-    b.vertex_offset = start_vertex;
-    b.vertex_count = vertex_count;
+	b.pure_color = false;
+	b.switch_fbo = false;
 
-    pxgl_rs_internal_push_batch_ui(&b);
+    pxgl_rs_internal_push_batch_2d(&b);
     return ERR_SUCCESS;
 }
 
@@ -1464,11 +1660,11 @@ t_err_codes px_rs_gl_draw_dropdown(PX_Dropdown* dd) {
     return ERR_SUCCESS;
 }
 
-void px_rs_gl_ui_frame_update(void) {
-    if (!gr_gl_ui->initialized)
+void px_rs_gl_2d_frame_update(void) {
+    if (!gr_gl_2d->initialized)
         return;
 
-    glViewport(0, 0, gr_gl_ui->screen_w, gr_gl_ui->screen_h);
+    glViewport(0, 0, gr_gl_2d->screen_w, gr_gl_2d->screen_h);
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -1512,9 +1708,9 @@ void px_rs_gl_frame_update(void) {
 	}
 }
 
-void px_rs_gl_ui_resize(PX_Scale2 screen_scale) {
-    gr_gl_ui->screen_w = screen_scale.w;
-    gr_gl_ui->screen_h = screen_scale.h;
+void px_rs_gl_2d_resize(PX_Scale2 screen_scale) {
+    gr_gl_2d->screen_w = screen_scale.w;
+    gr_gl_2d->screen_h = screen_scale.h;
     glViewport(0, 0, screen_scale.w, screen_scale.h);
 }
 
@@ -1526,7 +1722,7 @@ void px_rs_gl_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos) {
     glViewport(screen_pos.x, screen_pos.y, screen_scale.w, screen_scale.h);
 }
 
-t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
+t_err_codes px_rs_gl_draw_editor_objects_3d(PX_Scene_3D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
 
     for (size_t i = 0; i < scene->editor_object_count; i++) {
@@ -1606,17 +1802,88 @@ t_err_codes px_rs_gl_draw_editor_objects(PX_Scene* scene) {
                 batch.fbo_y = 0;
                 batch.fbo_w = gr_gl_3d->screen_w;
                 batch.fbo_h = gr_gl_3d->screen_h;
-                // Outer loop will push this
+                pxgl_rs_internal_push_batch_3d(&batch);
                 break;
             }
             default: continue;
         }
-        pxgl_rs_internal_push_batch_3d(&batch);
     }
     return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_gl_draw_scene(PX_Scene* scene) {
+t_err_codes px_rs_gl_draw_editor_objects_2d(PX_Scene_2D* scene) {
+	if (!scene) return ERR_INVALID_ARGUMENTS;
+
+    for (size_t i = 0; i < scene->editor_object_count; i++) {
+        struct batch_2d batch = {0};
+        batch.switch_fbo = false;
+        batch.pure_color = false;
+
+        PX_2D_Editor_Object* obj = &scene->editor_objects[i];
+        if (!obj->active) continue;
+        PX_Transform2 localT = obj->local_transform;
+        PX_Transform2 worldT = obj->world_transform;
+        PX_Transform2 finalT = opengl_combine_transform2(worldT, localT);
+
+        switch (obj->type){
+            case PX_RS_OBJECT_2D_EDITOR_GRID: {
+                if (!obj->ex_data) continue;
+                push_2d_grid(obj->ex_data, worldT, &batch);
+				pxgl_rs_internal_push_batch_2d(&batch);
+                break;
+            }
+            case PX_RS_OBJECT_2D_EDITOR_GIZMO: {
+                PX_Vector2 GXep = (PX_Vector2){finalT.pos.x + 5, finalT.pos.y};
+                PX_Vector2 GYep = (PX_Vector2){finalT.pos.x, finalT.pos.y + 5};
+                if (obj->ex_data && *(bool*)obj->ex_data)
+                    push_2d_line((PX_Color4){0x75,0x0,0x0,0xFF}, finalT.pos, GXep, 4.0f, &batch);
+                else
+                    push_2d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, finalT.pos, GXep, 4.0f, &batch);
+                
+                pxgl_rs_internal_push_batch_2d(&batch);
+                if (obj->ex_data && *(bool*)obj->ex_data)
+                    push_2d_line((PX_Color4){0x0,0x75,0x0,0xFF}, finalT.pos, GYep, 4.0f, &batch);
+                else
+                    push_2d_line((PX_Color4){0x0,0xFF,0x0,0xFF}, finalT.pos, GYep, 4.0f, &batch);
+                
+                pxgl_rs_internal_push_batch_2d(&batch);
+                
+                // Picker
+                PX_Color3 main_color = {
+                    .r = 0xFF, //obj->id & 0xFF,
+                    .g = (obj->id >> 8) & 0xFF,
+                    .b = obj->type
+                };
+
+                push_2d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT.pos, GXep, 4.0f, &batch);
+                batch.fbo = (PX_GPU_Handle)gr_gl_3d->flatFBO;
+                batch.switch_fbo = true;
+                batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = gr_gl_3d->screen_w;
+                batch.fbo_h = gr_gl_3d->screen_h;
+                pxgl_rs_internal_push_batch_2d(&batch);
+
+                push_2d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT.pos, GYep, 4.0f, &batch);
+                batch.fbo = (PX_GPU_Handle)gr_gl_3d->flatFBO;
+                batch.switch_fbo = true;
+                batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = gr_gl_3d->screen_w;
+                batch.fbo_h = gr_gl_3d->screen_h;
+                pxgl_rs_internal_push_batch_2d(&batch);
+                
+				break;
+            }
+            default: continue;
+        }
+    }
+    return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_gl_draw_scene_3d(PX_Scene_3D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
 
     for (size_t i = 0; i < scene->object_count; i++) {
@@ -1654,11 +1921,38 @@ t_err_codes px_rs_gl_draw_scene(PX_Scene* scene) {
                 }
                 gr_gl_3d->index_count += b->index_count;
 
+				pxgl_rs_internal_push_batch_3d(&batch);
                 break;
             }
             default: continue;
         }
-        pxgl_rs_internal_push_batch_3d(&batch);
+    }
+    return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_gl_draw_scene_2d(PX_Scene_2D* scene) {
+	if (!scene) return ERR_INVALID_ARGUMENTS;
+
+    for (size_t i = 0; i < scene->object_count; i++) {
+        PX_2D_Object* obj = &scene->objects[i];
+        if (!obj->active) continue;
+        PX_Transform2 localT = obj->local_transform;
+        PX_Transform2 worldT = obj->world_transform;
+        PX_Transform2 finalT = opengl_combine_transform2(worldT, localT);
+
+        struct batch_2d batch = {0};
+        batch.switch_fbo = false;
+        batch.pure_color = false;
+
+        switch (obj->type){
+            case PX_RS_OBJECT_2D_TYPE_PANEL: {
+				if (!obj->ex_data || obj->ex_data_type != PX_RS_OBJECT_2D_TYPE_PANEL) continue;
+                pxgl_2d_push_quad(finalT, *((PX_Color4*)(obj->ex_data)), &batch);
+				pxgl_rs_internal_push_batch_2d(&batch);
+                break;
+            }
+            default: continue;
+        }
     }
     return ERR_SUCCESS;
 }

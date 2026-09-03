@@ -36,7 +36,7 @@ typedef struct {
 } PX_Color3;
 
 typedef struct {
-    int x, y;
+    float x, y;
 } PX_Vector2;
 
 typedef struct {
@@ -44,7 +44,7 @@ typedef struct {
 } PX_Vector3;
 
 typedef struct {
-    int w, h;
+    float w, h;
 } PX_Scale2;
 
 typedef struct {
@@ -64,6 +64,7 @@ typedef struct {
 typedef struct {
     PX_Vector2 pos;
     PX_Scale2 scale;
+	float rot;
 } PX_Transform2;
 
 typedef struct {
@@ -127,6 +128,14 @@ typedef enum {
     PX_RS_OBJECT_3D_TYPE_EMPTY
 } PX_3D_Object_Type;
 
+typedef enum {
+    PX_RS_OBJECT_2D_TYPE_PANEL,
+	PX_RS_OBJECT_2D_TYPE_LIGHT,
+	PX_RS_OBJECT_2D_TYPE_CAMERA,
+	PX_RS_OBJECT_2D_TYPE_EMPTY,
+	PX_RS_OBJECT_2D_TYPE_SPRITE
+} PX_2D_Object_Type;
+
 /*
 ExData field
 
@@ -149,15 +158,43 @@ typedef struct PX_3D_Object {
     PX_3D_Object_Type ex_data_type;
 } PX_3D_Object;
 
+/*
+ExData field
+
+1. Type - Sprite -> Batch_UI structure
+2. Type - Panel -> Color4 structure
+*/
+typedef struct PX_2D_Object {
+    char* name;
+    bool active;
+    PX_2D_Object_Type type;
+
+    bool static_object;
+
+    PX_Transform2 world_transform;
+    PX_Transform2 local_transform;
+
+    struct PX_2D_Object* children[10]; // 10 MAX Children for now
+    bool has_children;
+
+    void* ex_data; // for sprites, its batch_2d struct
+    PX_2D_Object_Type ex_data_type;
+} PX_2D_Object;
+
 typedef enum {
     PX_RS_OBJECT_3D_EDITOR_GRID,
     PX_RS_OBJECT_3D_EDITOR_GIZMO
 } PX_3D_Editor_Object_Type;
 
+typedef enum {
+    PX_RS_OBJECT_2D_EDITOR_GRID,
+    PX_RS_OBJECT_2D_EDITOR_GIZMO
+} PX_2D_Editor_Object_Type;
+
 /*
 ExData field
 
-1. Type - Grid -> PX_EditorGrid structure
+1. Type - Grid -> PX_EditorGrid_3D structure
 2. Type - Gizmo -> bool pointer to define hover
 */
 typedef struct PX_3D_Editor_Object {
@@ -177,6 +214,30 @@ typedef struct PX_3D_Editor_Object {
     void* ex_data;
     PX_3D_Editor_Object_Type ex_data_type;
 } PX_3D_Editor_Object;
+
+/*
+ExData field
+
+1. Type - Grid -> PX_EditorGrid_2D structure
+2. Type - Gizmo -> bool pointer to define hover
+*/
+typedef struct PX_2D_Editor_Object {
+    char* name;
+    bool active;
+    PX_2D_Editor_Object_Type type;
+    uint16_t id;
+
+    bool static_object;
+
+    PX_Transform2 world_transform;
+    PX_Transform2 local_transform;
+
+    struct PX_2D_Editor_Object* children[10];
+    bool has_children;
+
+    void* ex_data;
+    PX_2D_Editor_Object_Type ex_data_type;
+} PX_2D_Editor_Object;
 
 typedef struct PX_BVHNode {
     PX_Vector3 min;
@@ -199,7 +260,19 @@ typedef struct {
 
     PX_3D_Editor_Object editor_objects[PX_RS_MAX_OBJECTS_PER_SCENE];
     size_t editor_object_count;
-} PX_Scene;
+} PX_Scene_3D;
+
+typedef struct {
+    PX_2D_Object objects[PX_RS_MAX_OBJECTS_PER_SCENE];
+    PX_2D_Object* active_object;
+    size_t object_count;
+
+    PX_BVHNode bvh_nodes[PX_RS_MAX_OBJECTS_PER_SCENE];
+    size_t bvh_node_count;
+
+    PX_2D_Editor_Object editor_objects[PX_RS_MAX_OBJECTS_PER_SCENE];
+    size_t editor_object_count;
+} PX_Scene_2D;
 
 typedef struct {
     bool visible;
@@ -208,7 +281,16 @@ typedef struct {
     float spacing;
 
     PX_Color4 color;
-} PX_EditorGrid;
+} PX_EditorGrid_3D;
+
+typedef struct {
+    bool visible;
+
+    float half_size;
+    float spacing;
+
+    PX_Color4 color;
+} PX_EditorGrid_2D;
 
 typedef struct {
     float x;
@@ -338,28 +420,31 @@ typedef struct {
 // Core
 t_err_codes px_rs_init(void); // Initialize Base Rendering Engine
 t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Initialize 3D Rendering Engine
-t_err_codes px_rs_init_ui(PX_Scale2 screen_scale); // Initialize UI Rendering Engine
-void px_rs_shutdown_ui(void); // Shutdown UI Rendering Engine
+t_err_codes px_rs_init_2d(PX_Scale2 screen_scale); // Initialize UI Rendering Engine
+void px_rs_shutdown_2d(void); // Shutdown UI Rendering Engine
 void px_rs_shutdown_3d(void); // Shutdown 3D Rendering Engine
 void px_rs_shutdown(void); // Shutdown All Rendering Engines
 void px_rs_frame_start(void);// Start Frame
 void px_rs_frame_end(void); // End Frame
-void px_rs_ui_frame_update(void); // Update Frame for UI Rendering Engine
+void px_rs_2d_frame_update(void); // Update Frame for UI Rendering Engine
 void px_rs_3d_frame_update(void); // Update Frame for 3D Rendering Engine
 void px_rs_frame_update(void); // Update Frame for All Rendering Engines
-void px_rs_ui_resize(PX_Scale2 screen_scale); // Resize Viewport for UI Rendering Engine
+void px_rs_2d_resize(PX_Scale2 screen_scale); // Resize Viewport for UI Rendering Engine
 void px_rs_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Resize Viewport for 3D Rendering Engine
-void px_rs_update_scene_cam(PX_Vector2 mdelta, PX_EKeycodes key); // Update Scene Camera
+void px_rs_update_scene_cam_3d(PX_Vector2 mdelta, PX_EKeycodes key); // Updates the 3D Scene Camera
+void px_rs_update_scene_cam_2d(PX_Vector2 mdelta, PX_EKeycodes key); // Update the 2D Scene Camera
 void px_rs_config_scene_cam(float mouse_sensitivity, float speed); // Configurate Scene Camera
 t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius); // Draw a UI Panel
 int px_rs_text_width(struct PX_Font* font, const char* text, float pixel_height); // Get Final Width of UI Text on Screen without Drawing it
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, struct PX_Font* font); // Render UI Text on Screen
 t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color); // Draw a UI Line on Screen
 t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd); // Draw a UI Dropdown on Screen
-t_err_codes px_rs_draw_editor_objects(PX_Scene* scene); // Draw 3D Editor Objects in Viewport
-t_err_codes px_rs_draw_scene(PX_Scene* scene); // Draw all 3D Objects in Viewport
+t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene); // Draw 3D Editor Objects in Viewport
+t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene); // Draw all 3D Objects in Viewport
+t_err_codes px_rs_draw_editor_objects_2d(PX_Scene_2D* scene); // Draw 2D Editor Objects on Screen
+t_err_codes px_rs_draw_scene_2d(PX_Scene_2D* scene); // Draw all 2D Objects on Screen
 void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale); // Handle Mouse Movement for Events and more
-t_err_codes px_rs_change_backend(PX_GPU_Backend new_backend, PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Change GPU API Backend
+t_err_codes px_rs_change_backend(PX_GPU_Backend new_backend); // Change GPU API Backend
 
 // Extra
 t_err_codes px_rs_create_texture(PX_Texture* texture); // Create the desired texture

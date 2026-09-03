@@ -11,7 +11,7 @@
 
 #include <external/stb_image.h>
 
-size_t px_rs_loader_load_file(PX_Scene* s, const char* path) {
+size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
     const struct aiScene* scene =  aiImportFile(path,
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
@@ -129,7 +129,7 @@ size_t px_rs_loader_load_file(PX_Scene* s, const char* path) {
     return base_idx;
 }
 
-void px_rs_loader_destroy_load(PX_Scene* s, PX_3D_Object* object) {
+void px_rs_loader_destroy_load(PX_Scene_3D* s, PX_3D_Object* object) {
     if (!s || !object) return;
 
     if (object->type == PX_RS_OBJECT_3D_TYPE_MESH && object->ex_data && object->ex_data_type == PX_RS_OBJECT_3D_TYPE_MESH) {

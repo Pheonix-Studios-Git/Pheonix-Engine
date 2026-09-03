@@ -18,7 +18,7 @@ struct sdf_font {
     float sdf_range;
 };
 
-struct ui_vertex {
+struct vertex_2d {
     float x;
     float y;
     float u;
@@ -35,10 +35,10 @@ struct vertex_3d {
     float u, v;
 };
 
-enum ui_batch_type {
-    UI_BATCH_PANEL,
-    UI_BATCH_LINE,
-    UI_BATCH_TEXT
+enum batch_2d_type {
+    BATCH_2D_PANEL,
+    BATCH_2D_LINE,
+    BATCH_2D_TEXT
 };
 
 enum batch_3d_type {
@@ -46,12 +46,22 @@ enum batch_3d_type {
     BATCH_3D_LINES
 };
 
-struct ui_batch {
-    enum ui_batch_type type;
+struct batch_2d {
+    enum batch_2d_type type;
+	PX_GPU_Handle fbo;
+    int fbo_x;
+    int fbo_y;
+    int fbo_w;
+    int fbo_h;
+    bool switch_fbo;
+    bool pure_color;
+
+	float line_width;
+	
     int vertex_offset;
     int vertex_count;
 
-    struct ui_vertex* vertices;
+    struct vertex_2d* vertices;
 
     PX_Scale2 size;
     PX_Scale2 texel_size;
@@ -92,7 +102,7 @@ struct batch_3d {
     PX_Color4 color;
 };
 
-struct scene_cam {
+struct scene_cam_3d {
     vec3 position;
     vec3 target;
     vec3 up;
@@ -104,7 +114,15 @@ struct scene_cam {
     float mouse_sens;
 };
 
-extern struct scene_cam gscene_cam;
+struct scene_cam_2d {
+    vec2 position;
+	
+    float zoom;
+	float move_speed;
+};
+
+extern struct scene_cam_3d gscene_cam_3d;
+extern struct scene_cam_2d gscene_cam_2d;
 
 void px_rs_internal_push_batch_3d(struct batch_3d* b);
-void px_rs_internal_push_batch_ui(struct ui_batch* b);
+void px_rs_internal_push_batch_2d(struct batch_2d* b);

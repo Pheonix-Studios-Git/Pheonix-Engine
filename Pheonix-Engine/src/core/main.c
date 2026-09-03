@@ -20,6 +20,8 @@ typedef struct {
     char* build_psdf_json;
     char* build_psdf_out;
     bool help;
+	PX_EditorMode base_scene_type;
+	PX_GPU_Backend gpu_backend;
 } t_args;
 
 // Main
@@ -57,24 +59,37 @@ static bool engine_mouse_ignore1 = false;
 // Rendering Objects
 static PX_Dropdown engine_menu_dropdown = {0};
 // Colors
-static PX_Color4 engine_ui_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
+static PX_Color4 engine_2d_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
 // Identifiers
 static PX_Event_Identifier engine_obj_identifiers[10];
 static PX_Event_Identifier* engine_obj_identifiers_x[10];
 static int engine_obj_identifier_count = 0;
 // Engine 3D Objects
-PX_EditorGrid engine_3drenderer_editor_grid = {
+PX_EditorGrid_3D engine_3drenderer_editor_grid = {
     .visible = true,
     .half_size = 100,
     .color = (PX_Color4){0x24, 0x24, 0x24, 0xFF},
     .spacing = 5.0f
 };
 static size_t engine_3drenderer_gizmo_idx;
+// Engine 2D Objects
+PX_EditorGrid_2D engine_2drenderer_editor_grid = {
+    .visible = true,
+    .half_size = 100,
+    .color = (PX_Color4){0x24, 0x24, 0x24, 0xFF},
+    .spacing = 5.0f
+};
+static size_t engine_2drenderer_gizmo_idx;
 // 3D Renderer
-PX_Scene engine_3drenderer_main_scene = {0};
+PX_Scene_3D engine_3drenderer_main_scene = {0};
 static float engine_3drenderer_scene_cam_speed = 1.0f;
 static bool engine_3drenderer_scene_cam_speed_doubled = false;
 static bool engine_3drenderer_hover_on_gizmo = false;
+// 2D Renderer
+PX_Scene_2D engine_2drenderer_main_scene = {0};
+static float engine_2drenderer_scene_cam_speed = 1.0f;
+static bool engine_2drenderer_scene_cam_speed_doubled = false;
+static bool engine_2drenderer_hover_on_gizmo = false;
 
 // Anchors
 static PX_AnchorRect engine_anchor_menubar = {
@@ -95,6 +110,8 @@ static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
     printf("Commands:\n");
     printf("\tbuild-psdf <.json file containing SDF info> <output PSDF path>: Builds PSDF files from SDF files\n");
+	printf("\tbase-scene-type <3d|2d>: Specifies the starting scene type. Value can be only '3d' or '2d'\n");
+	printf("\tgpu-backend <vulkan|opengl>: Specifies the GPU Backend API to use. Value can be only 'vulkan' or 'opengl'\n");
     printf("\thelp: Prints this help message\n");
 }
 
@@ -104,6 +121,8 @@ static void parse_args(t_args* args, int argc, char** argv) {
     args->build_psdf = false;
     args->build_psdf_json = NULL;
     args->build_psdf_out = NULL;
+	args->base_scene_type = PX_EDITOR_MODE_3D;
+	args->gpu_backend = PX_RS_GPU_BACKEND_OPENGL;
     
     for (int i = 1; i < argc; i++) {
         char* opt = argv[i];
@@ -118,10 +137,43 @@ static void parse_args(t_args* args, int argc, char** argv) {
             }
            
             args->build_psdf = true;
-            args->build_psdf_json = argv[i + 1];
-            args->build_psdf_out = argv[i + 2];
-            i += 2;
-        } else {
+            args->build_psdf_json = argv[++i];
+            args->build_psdf_out = argv[++i];
+        } else if (strcmp(opt, "--base-scene-type") == 0) {
+			if (i + 1 >= argc) {
+                fprintf(stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tUse --help for more info!\n");
+                args->valid = false;
+                break;
+            }
+
+			char* type = argv[++i];
+			if (strcmp(type, "3d") == 0) {
+				args->base_scene_type = PX_EDITOR_MODE_3D;
+			} else if (strcmp(type, "2d") == 0) {
+				args->base_scene_type = PX_EDITOR_MODE_2D;
+			} else {
+				fprintf(stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tBase Scene Type can only be '3d' or '2d'\n\tUse --help for more info!\n");
+                args->valid = false;
+                break;
+			}
+		} else if (strcmp(opt, "--gpu-backend") == 0) {
+			if (i + 1 >= argc) {
+                fprintf(stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tUse --help for more info!\n");
+                args->valid = false;
+                break;
+            }
+
+			char* type = argv[++i];
+			if (strcmp(type, "vulkan") == 0) {
+				args->gpu_backend = PX_RS_GPU_BACKEND_VULKAN;
+			} else if (strcmp(type, "opengl") == 0) {
+				args->gpu_backend = PX_RS_GPU_BACKEND_OPENGL;
+			} else {
+				fprintf(stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tGPU Backend API can only be 'vulkan' or 'opengl'\n\tUse --help for more info!\n");
+                args->valid = false;
+                break;
+			}
+		} else {
             fprintf(stderr, "Usage: pheonix-engine [--COMMANDS]\n\tUse --help for more info!\n");
             args->valid = false;
             break;
@@ -165,7 +217,8 @@ static PX_Transform2 enginef_convert_anchor_to_transform(PX_AnchorRect r) {
         .scale = {
             .w = r.w * engine_window_main_w,
             .h = r.h * engine_window_main_h
-        }
+        },
+		.rot = 0
     };
 }
 
@@ -176,7 +229,7 @@ static void enginef_init_dropdowns(void) {
     engine_menu_dropdown.pos = menubar_t.pos;
     engine_menu_dropdown.width = menubar_t.scale.w;
     engine_menu_dropdown.height = menubar_t.scale.h;
-    engine_menu_dropdown.color = engine_ui_black_panel_color;
+    engine_menu_dropdown.color = engine_2d_black_panel_color;
     engine_menu_dropdown.hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xD4};
     engine_menu_dropdown.text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
     engine_menu_dropdown.hover_index = -1;
@@ -205,7 +258,7 @@ static void enginef_init_dropdowns(void) {
         item->width = px_rs_text_width(engine_font_ui, menu_labels[i], engine_menu_dropdown.font_size);
         item->spacing = 16;
         item->font_size = 14.0f;;
-        item->panel_color = engine_ui_black_panel_color;
+        item->panel_color = engine_2d_black_panel_color;
         item->hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF};
         item->text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
         item->is_open = false;
@@ -269,7 +322,7 @@ static void enginef_core_render(void) {
         enginef_convert_anchor_to_transform(engine_anchor_scene_panel),
         (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF},
         (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF},
-        engine_ui_black_panel_color,
+        engine_2d_black_panel_color,
         (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF},
         0.03f, 0.0f,
         engine_font_ui, 16.0f,
@@ -289,6 +342,14 @@ static void enginef_core_render(void) {
             PX_3D_Editor_Object* gizmo = &engine_3drenderer_main_scene.editor_objects[engine_3drenderer_gizmo_idx];
             gizmo->local_transform = engine_3drenderer_main_scene.active_object->local_transform;
             gizmo->world_transform = engine_3drenderer_main_scene.active_object->world_transform;
+            gizmo->active = true;
+        }
+    }
+	if (engine_2drenderer_main_scene.active_object != NULL) {
+        if (engine_2drenderer_gizmo_idx > 0 && engine_2drenderer_gizmo_idx < engine_2drenderer_main_scene.editor_object_count) {
+            PX_2D_Editor_Object* gizmo = &engine_2drenderer_main_scene.editor_objects[engine_3drenderer_gizmo_idx];
+            gizmo->local_transform = engine_2drenderer_main_scene.active_object->local_transform;
+            gizmo->world_transform = engine_2drenderer_main_scene.active_object->world_transform;
             gizmo->active = true;
         }
     }
@@ -319,6 +380,19 @@ static void enginef_core_handle_gsignals(PX_Event_GSignal* signal, bool core_sig
                 }
                 default: break;
             }
+			break;
+        }
+		case EVENT_GSIGNAL_2D_HOVER: {
+            PX_Event_GSignal_2dHover s = signal->mouse_hover_on_2d;
+            switch (s.id) {
+                case 1: {
+                    if (s.objType != PX_RS_OBJECT_2D_EDITOR_GIZMO) break;
+                    engine_2drenderer_hover_on_gizmo = true;
+                    break;
+                }
+                default: break;
+            }
+			break;
         }
         default: break;
     }
@@ -352,6 +426,38 @@ void enginef_init_3drenderer_main_scene(void) {
     };
     engine_3drenderer_gizmo_idx = engine_3drenderer_main_scene.editor_object_count;
     engine_3drenderer_main_scene.editor_objects[engine_3drenderer_main_scene.editor_object_count++] = gizmo;
+}
+
+void enginef_init_2drenderer_main_scene(void) {
+	PX_Transform2 worldT = enginef_convert_anchor_to_transform(engine_anchor_scene_editor);
+
+    PX_2D_Editor_Object gridlines = {
+        .active = true,
+        .name = "Grid Lines",
+        .type = PX_RS_OBJECT_2D_EDITOR_GRID,
+        .has_children = false,
+        .static_object = true,
+        .local_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
+        .world_transform = worldT,
+        .ex_data_type = PX_RS_OBJECT_2D_EDITOR_GRID,
+        .ex_data = &engine_2drenderer_editor_grid,
+        .id = 0
+    };
+    engine_2drenderer_main_scene.editor_objects[engine_2drenderer_main_scene.editor_object_count++] = gridlines;
+    PX_2D_Editor_Object gizmo = {
+        .active = false,
+        .name = "Test Gizmo",
+        .type = PX_RS_OBJECT_2D_EDITOR_GIZMO,
+        .has_children = false,
+        .static_object = true,
+        .local_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
+        .world_transform = worldT,
+        .ex_data_type = PX_RS_OBJECT_2D_EDITOR_GIZMO,
+        .ex_data = &engine_2drenderer_hover_on_gizmo,
+        .id = 1
+    };
+    engine_2drenderer_gizmo_idx = engine_2drenderer_main_scene.editor_object_count;
+    engine_2drenderer_main_scene.editor_objects[engine_2drenderer_main_scene.editor_object_count++] = gizmo;
 }
 
 static double enginef_core_get_time() {
@@ -393,13 +499,13 @@ int main(int argc, char** argv) {
     // Initialize SubSystems
     last_err = px_ws_init();
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize window system!\n");
+        fprintf(stderr, "Error: Failed to initialize window system! (%u)\n", last_err);
         return last_err;
     } 
 
     last_err = px_ws_show_splash();
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to display splash screen!\n");
+        fprintf(stderr, "Error: Failed to display splash screen! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -407,7 +513,7 @@ int main(int argc, char** argv) {
 
     last_err = px_ws_create(&engine_window_main);
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to create window!\n");
+        fprintf(stderr, "Error: Failed to create window! (%u)\n", last_err);
         px_ws_shutdown();
         return last_err;
     }
@@ -416,17 +522,25 @@ int main(int argc, char** argv) {
     
     px_ws_create_ctx(&engine_window_main);
 
-    last_err = px_rs_init();
-    if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize rendering system!\n");
+	last_err = px_rs_change_backend(passed_args.gpu_backend);
+	if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to change GPU API Backend! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
     }
 
-    last_err = px_rs_init_ui((PX_Scale2){engine_window_main_w, engine_window_main_h});
+    last_err = px_rs_init();
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize UI rendering system!\n");
+        fprintf(stderr, "Error: Failed to initialize rendering system! (%u)\n", last_err);
+        px_ws_destroy(&engine_window_main);
+        px_ws_shutdown();
+        return last_err;
+    }
+
+    last_err = px_rs_init_2d((PX_Scale2){engine_window_main_w, engine_window_main_h});
+    if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to initialize UI rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -434,7 +548,7 @@ int main(int argc, char** argv) {
 
     last_err = px_rs_init_3d((PX_Scale2){engine_window_main_w - (engine_window_main_w / 4), engine_window_main_h - engine_menu_dropdown.height}, (PX_Vector2){engine_window_main_w / 4, engine_menu_dropdown.height});
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize 3D rendering system!\n");
+        fprintf(stderr, "Error: Failed to initialize 3D rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -457,10 +571,12 @@ int main(int argc, char** argv) {
     enginef_init_dropdowns();
     menu_evs_init(&engine_menu_dropdown, NULL);
     // Project
-    editor_new_project(&engine_3drenderer_main_scene, "Untitled");
+    editor_new_project(&engine_3drenderer_main_scene, &engine_2drenderer_main_scene, "Untitled", passed_args.base_scene_type);
+	PX_EditorState* editor_state = editor_get_state();
 
-    // Load scene
+    // Load scenes
     enginef_init_3drenderer_main_scene();
+	enginef_init_2drenderer_main_scene();
 
     // Configure Scene Cam
     px_rs_config_scene_cam(-1.0f, engine_3drenderer_scene_cam_speed);
@@ -497,12 +613,16 @@ int main(int argc, char** argv) {
         px_rs_frame_update();
 
         // Draw 3D
-        px_rs_3d_frame_update();
-        px_rs_draw_scene(&engine_3drenderer_main_scene);
-        px_rs_draw_editor_objects(&engine_3drenderer_main_scene);
+		if (editor_state->current_mode == PX_EDITOR_MODE_3D) {
+			px_rs_draw_scene_3d(&engine_3drenderer_main_scene);
+			px_rs_draw_editor_objects_3d(&engine_3drenderer_main_scene);
+		}
         
         // Draw 2D
-        px_rs_ui_frame_update();
+		if (editor_state->current_mode == PX_EDITOR_MODE_2D) {
+			px_rs_draw_scene_2d(&engine_2drenderer_main_scene);
+			px_rs_draw_editor_objects_2d(&engine_2drenderer_main_scene);
+		}
         enginef_core_render();
 
         px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, (PX_Scale2){engine_window_main_w, engine_window_main_h});
@@ -519,7 +639,7 @@ int main(int argc, char** argv) {
 
         last_err = px_ws_poll(&engine_window_main);
         if (last_err != ERR_SUCCESS) {
-            fprintf(stderr, "Error: Failed to poll events!\n");
+            fprintf(stderr, "Error: Failed to poll events! (%u)\n", last_err);
             enginef_cleanup();
             return last_err;
         }
@@ -539,7 +659,7 @@ int main(int argc, char** argv) {
                     engine_window_main_h = ev.h;
                     engine_window_main.width = ev.w;
                     engine_window_main.height = ev.h;
-                    px_rs_ui_resize((PX_Scale2){ev.w, ev.h});
+                    px_rs_2d_resize((PX_Scale2){ev.w, ev.h});
                     PX_Transform2 scene_editor = enginef_convert_anchor_to_transform(engine_anchor_scene_editor);
                     px_rs_3d_resize(scene_editor.scale, scene_editor.pos);
                     event_resize((PX_Scale2){ev.w, ev.h});
@@ -559,7 +679,8 @@ int main(int argc, char** argv) {
                     if (!engine_mouse_locked) break;
                     PX_Vector2 mDelta = {.x=ev.x-engine_mouse_saved_x, .y=ev.y-engine_mouse_saved_y};
 
-                    px_rs_update_scene_cam(mDelta, EKeycode_Unknown);
+                    if (editor_state->current_mode == PX_EDITOR_MODE_3D) px_rs_update_scene_cam_3d(mDelta, EKeycode_Unknown);
+					else if (editor_state->current_mode == PX_EDITOR_MODE_2D) px_rs_update_scene_cam_2d(mDelta, EKeycode_Unknown);
 
                     px_ws_set_mouse_pos(&engine_window_main, (PX_Vector2){.x=engine_mouse_saved_x,.y=engine_mouse_saved_y});
                     engine_mouse_ignore1 = true;
@@ -619,7 +740,7 @@ int main(int argc, char** argv) {
                             break;
                         }
                         default: {
-                            px_rs_update_scene_cam((PX_Vector2){ev.x, ev.y}, ev.keycode);
+                            px_rs_update_scene_cam_3d((PX_Vector2){ev.x, ev.y}, ev.keycode);
                             break;
                         }
                     }

@@ -9,7 +9,8 @@ typedef enum {
     EVENT_GSIGNAL_UI_DROPDOWN_CLICK,
     EVENT_GSIGNAL_UI_SCENE_PANEL_CLICK,
     EVENT_GSIGNAL_CORE_QUIT,
-    EVENT_GSIGNAL_3D_HOVER
+    EVENT_GSIGNAL_3D_HOVER,
+	EVENT_GSIGNAL_2D_HOVER
 } PX_Event_GSignals;
 
 typedef struct {
@@ -19,7 +20,8 @@ typedef struct {
 } PX_Event_GSignal_UIDropdownClick;
 
 typedef struct {
-    PX_3D_Object* obj;
+    PX_3D_Object* obj3d;
+	PX_2D_Object* obj2d;
     char* clicked_name;
 } PX_Event_GSignal_UIScenePanelClick;
 
@@ -28,6 +30,7 @@ typedef struct {
     uint8_t subId;
     uint8_t objType;
 } PX_Event_GSignal_3dHover;
+typedef PX_Event_GSignal_3dHover PX_Event_GSignal_2dHover;
 
 typedef struct {
     PX_Event_GSignals type;
@@ -36,6 +39,7 @@ typedef struct {
         PX_Event_GSignal_UIScenePanelClick ui_scenepanel_click;
         bool core_quit;
         PX_Event_GSignal_3dHover mouse_hover_on_3d;
+		PX_Event_GSignal_2dHover mouse_hover_on_2d;
     };
 } PX_Event_GSignal;
 
