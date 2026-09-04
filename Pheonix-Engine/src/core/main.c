@@ -26,6 +26,7 @@ typedef struct {
 
 // Main
 static bool engine_running = false;
+
 // Window Info
 static int engine_window_main_w = 1000;
 static int engine_window_main_h = 800;
@@ -39,6 +40,10 @@ static PX_WindowDesign engine_window_main_design = (PX_WindowDesign){
     .title_bar_color = 0x00000000,
     .title_text_color = 0x00000000
 };
+
+// Window Contexts
+PX_WContext engine_window_context_main = {0};
+
 // Windows
 PX_Window engine_window_main = (PX_Window){
     .width = 1000,
@@ -47,8 +52,10 @@ PX_Window engine_window_main = (PX_Window){
     .handle = -1,
     .vsync_off = false
 };
+
 // Fonts
 static PX_Font* engine_font_ui = NULL;
+
 // Mouse Info
 static int engine_mouse_x = 0;
 static int engine_mouse_y = 0;
@@ -56,14 +63,18 @@ static int engine_mouse_saved_x = 0;
 static int engine_mouse_saved_y = 0;
 static bool engine_mouse_locked = false;
 static bool engine_mouse_ignore1 = false;
+
 // Rendering Objects
 static PX_Dropdown engine_menu_dropdown = {0};
+
 // Colors
 static PX_Color4 engine_2d_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
+
 // Identifiers
 static PX_Event_Identifier engine_obj_identifiers[10];
 static PX_Event_Identifier* engine_obj_identifiers_x[10];
 static int engine_obj_identifier_count = 0;
+
 // Engine 3D Objects
 PX_EditorGrid_3D engine_3drenderer_editor_grid = {
     .visible = true,
@@ -73,6 +84,7 @@ PX_EditorGrid_3D engine_3drenderer_editor_grid = {
 };
 static size_t engine_3drenderer_gizmo_idx;
 // Engine 2D Objects
+
 PX_EditorGrid_2D engine_2drenderer_editor_grid = {
     .visible = true,
     .half_size = 100,
@@ -80,11 +92,13 @@ PX_EditorGrid_2D engine_2drenderer_editor_grid = {
     .spacing = 5.0f
 };
 static size_t engine_2drenderer_gizmo_idx;
+
 // 3D Renderer
 PX_Scene_3D engine_3drenderer_main_scene = {0};
 static float engine_3drenderer_scene_cam_speed = 1.0f;
 static bool engine_3drenderer_scene_cam_speed_doubled = false;
 static bool engine_3drenderer_hover_on_gizmo = false;
+
 // 2D Renderer
 PX_Scene_2D engine_2drenderer_main_scene = {0};
 static float engine_2drenderer_scene_cam_speed = 1.0f;
@@ -511,7 +525,7 @@ int main(int argc, char** argv) {
         return last_err;
     }
 
-    last_err = px_ws_create(&engine_window_main);
+    last_err = px_ws_create(&engine_window_main, passed_args.gpu_backend);
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to create window! (%u)\n", last_err);
         px_ws_shutdown();
@@ -522,6 +536,14 @@ int main(int argc, char** argv) {
     
     px_ws_create_ctx(&engine_window_main);
 
+	last_err = px_ws_get_ctx(&engine_window_main, &engine_window_context_main);
+	if (last_err != ERR_SUCCESS) {
+        fprintf(stderr, "Error: Failed to retrieve Window-GPU Context! (%u)\n", last_err);
+        px_ws_destroy(&engine_window_main);
+        px_ws_shutdown();
+        return last_err;
+    }
+
 	last_err = px_rs_change_backend(passed_args.gpu_backend);
 	if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to change GPU API Backend! (%u)\n", last_err);
@@ -530,7 +552,7 @@ int main(int argc, char** argv) {
         return last_err;
     }
 
-    last_err = px_rs_init();
+    last_err = px_rs_init(&engine_window_context_main);
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);

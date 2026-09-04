@@ -37,10 +37,15 @@ typedef struct {
 typedef struct {
     unsigned int width;
     unsigned int height;
+
     const char* title;
     unsigned int flags;
     int handle;
+
     PX_WE_Queue queue;
+
+	PX_GPU_Backend gpu_backend_api;
+	uint64_t ctx_handle;
     bool vsync_off;
 } PX_Window;
 
@@ -58,7 +63,7 @@ typedef struct {
 t_err_codes px_ws_init(void);
 void px_ws_shutdown(void);
 
-t_err_codes px_ws_create(PX_Window* win);
+t_err_codes px_ws_create(PX_Window* win, PX_GPU_Backend gpu_backend_api);
 t_err_codes px_ws_show(PX_Window* win);
 t_err_codes px_ws_hide(PX_Window* win);
 void px_ws_destroy(PX_Window* win);
@@ -70,6 +75,7 @@ t_err_codes px_ws_show_splash(void);
 t_err_codes px_ws_window_design(PX_Window* win, PX_WindowDesign* design);
 
 t_err_codes px_ws_create_ctx(PX_Window* win);
+t_err_codes px_ws_get_ctx(PX_Window* win, PX_WContext* out);
 t_err_codes px_ws_swap_buffers(PX_Window* win);
 
 char* px_ws_open_file_selector_dialog(void);
@@ -78,3 +84,9 @@ t_err_codes px_ws_set_mouse_locked(PX_Window* win, bool locked);
 t_err_codes px_ws_set_mouse_pos(PX_Window* win, PX_Vector2 pos);
 
 t_err_codes px_ws_set_fullscreen(PX_Window* win, bool enabled);
+
+#ifdef __PHEONIX_ENGINE__WINDOW_SYS__VULKAN_SPECIFIC_INC__
+#include <rendering-sys/vulkan.h>
+
+t_err_codes px_ws_vk_finish_ctx(PX_WContext* ctx, VkInstance instance, PFN_vkGetInstanceProcAddr GetInstanceProcAddr);
+#endif

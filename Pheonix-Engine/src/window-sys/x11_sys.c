@@ -9,7 +9,6 @@
 #include <time.h>
 
 #include <window-sys.h>
-#include <window-sys/backends.h>
 #include <err-codes.h>
 #include <event-sys.h>
 #include <core/image.h>
@@ -25,6 +24,10 @@
 #include <external/tinyfiledialogs.h>
 
 #include <rendering-sys/opengl.h>
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <rendering-sys/vulkan.h>
+
+#include <window-sys/backends.h>
 
 struct keysym_map {
     KeySym sym;
@@ -166,7 +169,12 @@ static Display* g_display = NULL;
 static int g_screen = 0;
 static int g_handle = 0;
 
-static int is_ext_supported(Display *dpy, int screen, const char *extName) {
+static const char* g_vk_instance_extensions[] = {
+    VK_KHR_SURFACE_EXTENSION_NAME,
+	VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+};
+
+static int glx_is_ext_supported(Display *dpy, int screen, const char *extName) {
     const char *exts = glXQueryExtensionsString(dpy, screen);
     if (exts) {
         return (strstr(exts, extName) != NULL);
@@ -320,15 +328,13 @@ static void x11_shutdown(void) {
     }
 }
 
-static t_err_codes x11_create(PX_Window* win) {
-    if (!win)
-        return ERR_INTERNAL;
-
+static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
+    if (!win) return ERR_INTERNAL;
     win->handle = -1;
+	win->gpu_backend_api = gpu_backend_api;
 
     struct window* iwin = (struct window*)malloc(sizeof(struct window));
-    if (!iwin)
-        return ERR_ALLOC_FAILED;
+    if (!iwin) return ERR_ALLOC_FAILED;
 
     iwin->display = g_display;
     Window root = RootWindow(g_display, g_screen);
@@ -366,8 +372,8 @@ static t_err_codes x11_create(PX_Window* win) {
 }
 
 static void x11_destroy(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return;
+    if (!win) return;
+	if (win->handle < 0) return;
 
     struct window* iwin = get_window(win->handle);
     if (!iwin) return;
@@ -383,8 +389,8 @@ static void x11_destroy(PX_Window* win) {
 }
 
 static t_err_codes x11_show(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
@@ -395,8 +401,8 @@ static t_err_codes x11_show(PX_Window* win) {
 }
 
 static t_err_codes x11_hide(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
@@ -407,8 +413,8 @@ static t_err_codes x11_hide(PX_Window* win) {
 }
 
 static t_err_codes x11_poll_events(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
@@ -676,8 +682,9 @@ static t_err_codes x11_engine_splash(void) {
 }
 
 static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
-    if (!win || win->handle < 0 || !design)
-        return ERR_INTERNAL;
+    if (!win || !design) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
@@ -695,49 +702,109 @@ static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
 }
 
 static t_err_codes x11_create_ctx(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    int attr[] = {
-        GLX_RGBA,
-        GLX_DOUBLEBUFFER,
-        GLX_RED_SIZE, 8,
-        GLX_GREEN_SIZE, 8,
-        GLX_BLUE_SIZE, 8,
-        GLX_DEPTH_SIZE, 24,
-        GLX_SAMPLE_BUFFERS, 1,
-        GLX_SAMPLES, 4, // Request 4x MSAA
-        None
-    };
+	switch (win->gpu_backend_api) { // Safety Shield
+		case PX_RS_GPU_BACKEND_OPENGL: break;
+		case PX_RS_GPU_BACKEND_VULKAN: break;
+		default: return ERR_WS_INVALID_GPU_BACKEND;
+	}
 
-    XVisualInfo* visual = glXChooseVisual(iwin->display, 0, attr);
+	PX_WContext* ctx = (PX_WContext*)malloc(sizeof(PX_WContext));
+	if (!ctx) return ERR_ALLOC_FAILED;
+	win->ctx_handle = (uint64_t)((uintptr_t)ctx);
 
-    GLXContext gl_ctx = glXCreateContext(iwin->display, visual, 0, True);
-    iwin->gl_ctx_valid = true;
-    iwin->gl_ctx = gl_ctx;
-    glXMakeCurrent(iwin->display, iwin->window, gl_ctx);
+	ctx->iwin = (void*)iwin;
+	ctx->backend = win->gpu_backend_api;
 
-    if (is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control")) {
-        PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = (PFNGLXSWAPINTERVALEXTPROC)glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
+	switch (win->gpu_backend_api) {
+		case PX_RS_GPU_BACKEND_OPENGL: {
+			int attr[] = {
+				GLX_RGBA,
+				GLX_DOUBLEBUFFER,
+				GLX_RED_SIZE, 8,
+				GLX_GREEN_SIZE, 8,
+				GLX_BLUE_SIZE, 8,
+				GLX_DEPTH_SIZE, 24,
+				GLX_SAMPLE_BUFFERS, 1,
+				GLX_SAMPLES, 4, // Request 4x MSAA
+				None
+			};
 
-        if (glXSwapIntervalEXT != NULL) {
-            if (win->vsync_off)
-                glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), 0);
-            else
-                glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), 1);
-        }
-    }
+			XVisualInfo* visual = glXChooseVisual(iwin->display, 0, attr);
+			if (!visual) {
+				free(ctx);
+				win->ctx_handle = 0;
+				return ERR_WS_CONTEXT_CREATION_FAILED;
+			}
 
-    XFree(visual);
+			GLXContext gl_ctx = glXCreateContext(iwin->display, visual, 0, True);
+			if (!gl_ctx) {
+				XFree(visual);
+
+				free(ctx);
+				win->ctx_handle = 0;
+				return ERR_WS_CONTEXT_CREATION_FAILED;
+			}
+
+			if (!glXMakeCurrent(iwin->display, iwin->window, gl_ctx)) {
+				glXDestroyContext(iwin->display, gl_ctx);
+                XFree(visual);
+
+				free(ctx);
+				win->ctx_handle = 0;
+                return ERR_WS_CONTEXT_CREATION_FAILED;
+			}
+
+			iwin->gl_ctx_valid = true;
+			iwin->gl_ctx = gl_ctx;
+
+			if (glx_is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control")) {
+				PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = (PFNGLXSWAPINTERVALEXTPROC)glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
+				if (glXSwapIntervalEXT) glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), win->vsync_off ? 0 : 1);
+			}
+
+			XFree(visual);
+			ctx->opengl.ictx = (void*)(&iwin->gl_ctx);
+			break;
+		}
+
+		case PX_RS_GPU_BACKEND_VULKAN: {
+			ctx->vulkan.required_extensions = (const char**)g_vk_instance_extensions;
+			ctx->vulkan.required_extension_count = (size_t)(sizeof(g_vk_instance_extensions) / sizeof(const char*));
+			break;
+		}
+
+		default: { // Can't occur but good safety
+			free(ctx);
+			win->ctx_handle = 0;
+			return ERR_WS_INVALID_GPU_BACKEND;
+		}
+	}
 
     return ERR_SUCCESS;
 }
 
+static t_err_codes x11_get_ctx(PX_Window* win, PX_WContext* out) {
+	if (!win || !out) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
+	PX_WContext* ctx = (PX_WContext*)((uintptr_t)win->ctx_handle);
+	if (!ctx) return ERR_WS_NO_CONTEXT_FOUND;
+
+	*out = *ctx;
+	return ERR_SUCCESS;
+}
+
 static t_err_codes x11_swap_buffers(PX_Window* win) {
-    if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+	if (win->gpu_backend_api != PX_RS_GPU_BACKEND_OPENGL) return ERR_SUCCESS; // Control of buffer swap is with X11 only in OpenGL
+
     struct window* iwin = get_window(win->handle);
     if (!iwin || !iwin->gl_ctx_valid) return ERR_WS_NO_WINDOW_FOUND;
 
@@ -758,8 +825,9 @@ static char* x11_open_file_selector_dialog(void) {
 }
 
 static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
-	if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+	if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
     struct window* iwin = get_window(win->handle);
 	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
     if (locked) {
@@ -784,8 +852,9 @@ static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
 }
 
 static t_err_codes x11_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
-	if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+	if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
     struct window* iwin = get_window(win->handle);
 	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
     XWarpPointer(iwin->display, None, iwin->window, 0, 0, 0, 0, pos.x, pos.y);
@@ -793,8 +862,9 @@ static t_err_codes x11_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
 }
 
 static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
-	if (!win || win->handle < 0)
-        return ERR_INTERNAL;
+	if (!win) return ERR_INVALID_ARGUMENTS;
+	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
+
 	struct window* iwin = get_window(win->handle);
 	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
@@ -816,6 +886,32 @@ static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
 	return ERR_SUCCESS;
 }
 
+// Vulkan Specific
+static t_err_codes x11_vk_finish_ctx(PX_WContext* ctx, VkInstance instance, PFN_vkGetInstanceProcAddr GetInstanceProcAddr) {
+	if (!ctx || instance == VK_NULL_HANDLE) return ERR_INVALID_ARGUMENTS;
+	
+	struct window* iwin = (struct window*)ctx->iwin;
+    if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
+
+	PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = (PFN_vkCreateXlibSurfaceKHR)GetInstanceProcAddr(instance, "vkCreateXlibSurfaceKHR");
+	if (!CreateXlibSurfaceKHR) return ERR_WS_VK_FUNCTION_NOT_FOUND;
+
+	VkXlibSurfaceCreateInfoKHR create_info = {
+        .sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+        .pNext = NULL,
+        .flags = 0,
+        .dpy = iwin->display,
+        .window = iwin->window,
+    };
+
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkResult result = CreateXlibSurfaceKHR(instance, &create_info, NULL, &surface);
+	if (result != VK_SUCCESS) return ERR_WS_CONTEXT_CREATION_FAILED;
+
+	ctx->vulkan.surfaceKHR = (PX_GPU_Handle)surface;
+	return ERR_SUCCESS;
+}
+
 const t_px_ws_backend px_ws_backend_x11 = {
     .init = x11_init,
     .shutdown = x11_shutdown,
@@ -827,10 +923,13 @@ const t_px_ws_backend px_ws_backend_x11 = {
     .show_splash = x11_engine_splash,
     .window_design = x11_window_design,
     .create_ctx = x11_create_ctx,
+	.get_ctx = x11_get_ctx,
     .swap_buffers = x11_swap_buffers,
     .open_file_selector_dialog = x11_open_file_selector_dialog,
     .set_mouse_locked = x11_set_mouse_locked,
     .set_mouse_pos = x11_set_mouse_pos,
-	.set_fullscreen = x11_set_fullscreen
+	.set_fullscreen = x11_set_fullscreen,
+
+	.vk_finish_ctx = x11_vk_finish_ctx
 };
 

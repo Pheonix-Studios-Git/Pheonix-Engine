@@ -19,11 +19,11 @@ struct scene_cam_2d gscene_cam_2d = {0};
 static PX_GPU_Backend current_backend = __PHEONIX_ENGINE__RENDERING_SYS__DEFAULT_BACKEND__;
 static bool backend_initialized = false;
 
-t_err_codes px_rs_init(void) {
+t_err_codes px_rs_init(PX_WContext* ctx) {
 	t_err_codes code = ERR_FAILURE;
 	switch (current_backend) {
-		case PX_RS_GPU_BACKEND_OPENGL: code = px_rs_gl_init(); break;
-		case PX_RS_GPU_BACKEND_VULKAN: code = px_rs_vk_init(); break;
+		case PX_RS_GPU_BACKEND_OPENGL: code = px_rs_gl_init(ctx); break;
+		case PX_RS_GPU_BACKEND_VULKAN: code = px_rs_vk_init(ctx); break;
 		default: return ERR_RS_INVALID_BACKEND;
 	}
 

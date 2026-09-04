@@ -1,7 +1,11 @@
 #pragma once
 
 #include <err-codes.h>
+#include <rendering-sys.h>
+#include <font.h>
 #include <window-sys.h>
+
+#include <rendering-sys/vulkan.h>
 
 static inline bool px_we_queue_empty(PX_WE_Queue* q) {
     return q->head == q->tail;
@@ -29,7 +33,7 @@ typedef struct px_ws_backend {
     t_err_codes (*init)(void);
     void (*shutdown)(void);
 
-    t_err_codes (*create)(PX_Window*);
+    t_err_codes (*create)(PX_Window*, PX_GPU_Backend);
     void (*destroy)(PX_Window*);
 
     t_err_codes (*show)(PX_Window*);
@@ -41,6 +45,7 @@ typedef struct px_ws_backend {
     t_err_codes (*window_design)(PX_Window*, PX_WindowDesign*);
     
     t_err_codes (*create_ctx)(PX_Window*);
+	t_err_codes (*get_ctx)(PX_Window*, PX_WContext*);
     t_err_codes (*swap_buffers)(PX_Window*);
 
     char* (*open_file_selector_dialog)(void);
@@ -49,5 +54,8 @@ typedef struct px_ws_backend {
     t_err_codes (*set_mouse_pos)(PX_Window*, PX_Vector2);
 
 	t_err_codes (*set_fullscreen)(PX_Window*, bool);
+
+	// Vulkan Specific
+	t_err_codes (*vk_finish_ctx)(PX_WContext*, VkInstance, PFN_vkGetInstanceProcAddr);
 } t_px_ws_backend;
 

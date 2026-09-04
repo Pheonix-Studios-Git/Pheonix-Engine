@@ -884,7 +884,9 @@ static void pxgl_rs_internal_push_batch_3d(struct batch_3d* b) {
     gr_gl_3d->batch_count++;
 }
 
-t_err_codes px_rs_gl_init(void) {
+t_err_codes px_rs_gl_init(PX_WContext* ctx) {
+	(void)ctx; // No Use
+
     GLenum err = glewInit();
     if (err != GLEW_OK) {
         fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));

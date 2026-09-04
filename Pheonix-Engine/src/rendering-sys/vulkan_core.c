@@ -8,6 +8,9 @@
 
 #include <cglm/cglm.h>
 
+#define __PHEONIX_ENGINE__WINDOW_SYS__VULKAN_SPECIFIC_INC__
+#include <window-sys.h>
+
 #include <pheonix-engine.h>
 #include <rendering-sys.h>
 #include <font.h>
@@ -21,33 +24,104 @@
 
 struct vulkan_loader {
 	void* lib;
-
 	PFN_vkGetInstanceProcAddr GetInstanceProcAddr;
+	
 	PFN_vkCreateInstance CreateInstance;
 	PFN_vkDestroyInstance DestroyInstance;
+
     PFN_vkEnumerateInstanceExtensionProperties EnumerateInstanceExtensionProperties;
     PFN_vkEnumerateInstanceLayerProperties EnumerateInstanceLayerProperties;
 	PFN_vkEnumeratePhysicalDevices EnumeratePhysicalDevices;
+
     PFN_vkGetPhysicalDeviceProperties GetPhysicalDeviceProperties;
     PFN_vkGetPhysicalDeviceFeatures GetPhysicalDeviceFeatures;
 	PFN_vkGetPhysicalDeviceMemoryProperties GetPhysicalDeviceMemoryProperties;
+	PFN_vkGetPhysicalDeviceQueueFamilyProperties GetPhysicalDeviceQueueFamilyProperties;
+
+	PFN_vkGetPhysicalDeviceSurfaceSupportKHR GetPhysicalDeviceSurfaceSupportKHR;
+	PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR GetPhysicalDeviceSurfaceCapabilitiesKHR;
+	PFN_vkGetPhysicalDeviceSurfaceFormatsKHR GetPhysicalDeviceSurfaceFormatsKHR;
+	PFN_vkGetPhysicalDeviceSurfacePresentModesKHR GetPhysicalDeviceSurfacePresentModesKHR;
+
+	PFN_vkGetDeviceProcAddr GetDeviceProcAddr;
+	PFN_vkCreateDevice CreateDevice;
+	PFN_vkDestroyDevice DestroyDevice;
+	PFN_vkGetDeviceQueue GetDeviceQueue;
+	
+	PFN_vkDestroySurfaceKHR DestroySurfaceKHR;
+	PFN_vkDeviceWaitIdle DeviceWaitIdle;
 
 	bool loaded;
 };
 
+struct vulkan_physical_device {
+	VkPhysicalDevice device;
+    VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceFeatures features;
+	VkPhysicalDeviceMemoryProperties memory_properties;
+
+	VkQueueFamilyProperties* queue_families;
+	uint32_t queue_family_count;
+
+	uint32_t graphics_queue_family_idx;
+	uint32_t present_queue_family_idx;
+
+	VkDeviceSize video_memory_in_bytes;
+};
+
+struct vulkan_device {
+    VkDevice device;
+
+    VkQueue graphics_queue;
+	VkQueue present_queue;
+};
+
 struct base_renderer {
     VkInstance instance;
+	VkSurfaceKHR surface;
 
-	VkPhysicalDevice physical_device;
-    VkPhysicalDeviceProperties physical_device_properties;
-    VkPhysicalDeviceFeatures physical_device_features;
-	VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
+	struct vulkan_physical_device physical_device;
+	struct vulkan_device device;
 };
 
 static struct vulkan_loader gr_vk_loader = {0};
 
 static struct base_renderer gr_vk_base_raw = {0};
 static struct base_renderer* gr_vk_base = &gr_vk_base_raw;
+
+static const char* pxvk_beautify_bytes_unit(uint64_t bytes) {
+    static const char* units[] = {
+        "B",
+        "KiB",
+        "MiB",
+        "GiB",
+        "TiB",
+        "PiB",
+        "EiB"
+    };
+
+	double v = (double)bytes;
+
+    uint32_t unit = 0;
+    while (v >= 1024.0f && unit < 6) {
+        v /= 1024.0f;
+        unit++;
+    }
+
+    return units[unit];
+}
+
+static double pxvk_beautify_bytes_value(uint64_t bytes) {
+    double v = (double)bytes;
+
+    uint32_t unit = 0;
+    while (v >= 1024.0f && unit < 6) {
+        v /= 1024.0f;
+        unit++;
+    }
+
+    return v;
+}
 
 static t_err_codes pxvk_load_extensions_and_layers(const char** needed_layers, size_t needed_layer_count, const char** needed_extensions, size_t needed_ext_count) {
 	if ((needed_layer_count > 0 && !needed_layers) || (needed_ext_count > 0 && !needed_extensions)) return ERR_INVALID_ARGUMENTS;
@@ -116,8 +190,10 @@ static t_err_codes pxvk_load_extensions_and_layers(const char** needed_layers, s
     return ERR_SUCCESS;
 }
 
-static size_t pxvk_score_gpu(VkPhysicalDeviceMemoryProperties memory_properties, VkPhysicalDeviceProperties properties, VkPhysicalDeviceFeatures features) {
+static size_t pxvk_score_gpu(VkPhysicalDeviceMemoryProperties memory_properties, VkPhysicalDeviceProperties properties, VkPhysicalDeviceFeatures features, uint32_t queue_family_count, uint64_t* out_vram) {
     size_t score = 0;
+	if (queue_family_count < 1) return 0; // Can't use it without queues!
+
     switch (properties.deviceType) {
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
             score += 1000;
@@ -145,7 +221,9 @@ static size_t pxvk_score_gpu(VkPhysicalDeviceMemoryProperties memory_properties,
             device_local_memory += memory_properties.memoryHeaps[i].size;
         }
     }
-    size_t vram_gib = device_local_memory / (1024ULL * 1024ULL * 1024ULL);
+    
+	if (out_vram) *out_vram = (uint64_t)device_local_memory;
+	size_t vram_gib = device_local_memory / (1024ULL * 1024ULL * 1024ULL);
     score += vram_gib * 100;
 
 	if (features.samplerAnisotropy) score += 100;
@@ -154,11 +232,13 @@ static size_t pxvk_score_gpu(VkPhysicalDeviceMemoryProperties memory_properties,
     if (features.tessellationShader) score += 25;
     if (features.wideLines) score += 10;
 
+	score += queue_family_count * 10;
+
     return score;
 }
 
-static t_err_codes pxvk_load_best_gpu(VkPhysicalDevice* outDev, VkPhysicalDeviceProperties* outProp, VkPhysicalDeviceFeatures* outFeatures, VkPhysicalDeviceMemoryProperties* outMemProp) {
-	if (!outDev || !outProp || !outFeatures || !outMemProp) return ERR_INVALID_ARGUMENTS;
+static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurfaceKHR surfaceKHR) {
+	if (!out) return ERR_INVALID_ARGUMENTS;
 	uint32_t device_count = 0;
 
 	VkResult result = gr_vk_loader.EnumeratePhysicalDevices(gr_vk_base->instance, &device_count, VK_NULL_HANDLE);
@@ -179,12 +259,11 @@ static t_err_codes pxvk_load_best_gpu(VkPhysicalDevice* outDev, VkPhysicalDevice
 	}
 
 	size_t best_score = 0;
-	VkPhysicalDevice best_device;
-	VkPhysicalDeviceProperties best_properties;
-	VkPhysicalDeviceFeatures best_features;
-	VkPhysicalDeviceMemoryProperties best_mem_properties;
+	struct vulkan_physical_device best_device;
 
 	for (uint32_t i = 0; i < device_count; ++i) {
+		const char* cont_without_score_error = "Unknown";
+
 		VkPhysicalDeviceProperties properties;
 		gr_vk_loader.GetPhysicalDeviceProperties(devices[i], &properties);
 
@@ -194,22 +273,95 @@ static t_err_codes pxvk_load_best_gpu(VkPhysicalDevice* outDev, VkPhysicalDevice
 		VkPhysicalDeviceMemoryProperties mem_properties;
 		gr_vk_loader.GetPhysicalDeviceMemoryProperties(devices[i], &mem_properties);
 
-		size_t score = pxvk_score_gpu(mem_properties, properties, features);
-		if (score > best_score) {
-			best_score = score;
-			best_device = devices[i];
-			best_properties = properties;
-			best_features = features;
-			best_mem_properties = mem_properties;
-		}
-
 		printf("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
 
 		printf("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
 		printf("\tDriver: %u\n", properties.driverVersion);
 		printf("\tVendor: 0x%04x\n", properties.vendorID);
 		printf("\tDevice: 0x%04x\n", properties.deviceID);
-		printf("\tScore: %lu\n", score);
+
+		VkSurfaceCapabilitiesKHR capabilities;
+		result = gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR(devices[i], surfaceKHR, &capabilities);
+		if (result != VK_SUCCESS) continue;
+
+		uint32_t format_count = 0;
+		result = gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR(devices[i], surfaceKHR, &format_count, VK_NULL_HANDLE);
+		if (result != VK_SUCCESS || format_count == 0) continue;
+
+		uint32_t present_mode_count = 0;
+		result = gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR(devices[i], surfaceKHR, &present_mode_count, VK_NULL_HANDLE);
+		if (result != VK_SUCCESS || present_mode_count == 0) continue;
+
+		uint32_t queue_count;
+		gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, VK_NULL_HANDLE);
+		if (queue_count == 0) {
+			cont_without_score_error = "No Queue Families";
+			continue_without_score: {
+				printf("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
+
+				printf("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
+				printf("\tDriver: %u\n", properties.driverVersion);
+				printf("\tVendor: 0x%04x\n", properties.vendorID);
+				printf("\tDevice: 0x%04x\n", properties.deviceID);
+				printf("\tScore: 0 (%s)\n", cont_without_score_error);
+				continue;
+			}
+		}
+
+		VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)malloc(sizeof(VkQueueFamilyProperties)*queue_count);
+		if (!queue_families) {
+			cont_without_score_error = "Memory Allocation Failed";
+			goto continue_without_score;
+		}
+
+		gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, queue_families);
+		
+		int64_t graphics_queue = -1; // To use -1 as a invalid signal
+		int64_t present_queue = -1;
+
+		printf("\tQueue Families:\n");
+		for (uint32_t j = 0; j < queue_count; j++) {
+			VkQueueFamilyProperties* qfp = &queue_families[j];
+
+			printf("\tQueue Family %u:\n", j);
+			printf("\t\tQueues: %u\n", qfp->queueCount);
+			printf("\t\tFlags: 0x%04x\n", qfp->queueFlags);
+			if (qfp->queueCount < 1) continue;
+
+			if (qfp->queueFlags & VK_QUEUE_GRAPHICS_BIT) graphics_queue = (int64_t)j;
+		
+			VkBool32 present_supported = VK_FALSE;
+			VkResult result = gr_vk_loader.GetPhysicalDeviceSurfaceSupportKHR(devices[i], j, surfaceKHR, &present_supported);
+			if (result != VK_SUCCESS) continue;
+			
+			if (present_supported) present_queue = (int64_t)j;
+			if (present_queue >= 0 && graphics_queue >= 0) break;
+		}
+
+		if (graphics_queue < 0 || present_queue < 0) {
+			free(queue_families);
+			continue;
+		}
+
+		uint64_t vram = 0;
+		size_t score = pxvk_score_gpu(mem_properties, properties, features, queue_count, &vram);
+		if (score > best_score) {
+			best_score = score;
+			best_device.device = devices[i];
+			best_device.properties = properties;
+			best_device.features = features;
+			best_device.memory_properties = mem_properties;
+			best_device.video_memory_in_bytes = (VkDeviceSize)vram;
+			best_device.queue_family_count = queue_count;
+			best_device.graphics_queue_family_idx = (uint32_t)graphics_queue;
+			best_device.present_queue_family_idx = (uint32_t)present_queue;
+			best_device.queue_families = queue_families;
+		} else {
+			free(queue_families);
+		}
+
+		printf("\tVideo RAM: %.2f %s\n", pxvk_beautify_bytes_value(vram), pxvk_beautify_bytes_unit(vram));
+		printf("\tScore: %zu\n", score);
 	}
 	free(devices);
 
@@ -218,16 +370,67 @@ static t_err_codes pxvk_load_best_gpu(VkPhysicalDevice* outDev, VkPhysicalDevice
 		return ERR_VK_PHYSICAL_DEVICE_ENUMERATION_FAILED;
 	}
 	
-	*outDev = best_device;
-    *outProp = best_properties;
-    *outFeatures = best_features;
-	*outMemProp = best_mem_properties;
-    printf("[Vulkan] Selected GPU: %s (Score: %d)\n", best_properties.deviceName, best_score);
+	*out = best_device;
+    printf("[Vulkan] Selected GPU: %s (Score: %zu)\n", best_device.properties.deviceName, best_score);
 	
 	return ERR_SUCCESS;
 }
 
-t_err_codes px_rs_vk_init(void) {
+static t_err_codes pxvk_create_device(VkDevice* out, const char** layers, size_t layer_count, const char** extensions, size_t ext_count) {
+	if (!out) return ERR_INVALID_ARGUMENTS;
+
+    uint32_t graphics_idx = gr_vk_base->physical_device.graphics_queue_family_idx;
+	uint32_t present_idx = gr_vk_base->physical_device.present_queue_family_idx;
+
+    float queue_priority = 1.0f;
+	VkDeviceQueueCreateInfo queue_infos[2] = {0};
+	uint32_t queue_info_count = 0;
+
+    queue_infos[queue_info_count++] = (VkDeviceQueueCreateInfo){
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext = VK_NULL_HANDLE,
+        .flags = 0,
+        .queueFamilyIndex = graphics_idx,
+        .queueCount = 1,
+        .pQueuePriorities = &queue_priority
+    };
+
+	if (graphics_idx != present_idx) {
+		queue_infos[queue_info_count++] = (VkDeviceQueueCreateInfo){
+			.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			.pNext = VK_NULL_HANDLE,
+			.flags = 0,
+			.queueFamilyIndex = present_idx,
+			.queueCount = 1,
+			.pQueuePriorities = &queue_priority
+		};
+	}
+
+    VkDeviceCreateInfo device_info = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = VK_NULL_HANDLE,
+        .flags = 0,
+        .queueCreateInfoCount = queue_info_count,
+        .pQueueCreateInfos = (VkDeviceQueueCreateInfo*)queue_infos,
+        .enabledLayerCount = layer_count,
+        .ppEnabledLayerNames = layers,
+        .enabledExtensionCount = ext_count,
+        .ppEnabledExtensionNames = extensions,
+        .pEnabledFeatures = VK_NULL_HANDLE
+    };
+
+    VkResult result = gr_vk_loader.CreateDevice(gr_vk_base->physical_device.device, &device_info, VK_NULL_HANDLE, out);
+
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "[Vulkan] Failed to create logical device: %d\n", result);
+        return ERR_VK_DEVICE_CREATION_FAILED;
+    }
+
+    return ERR_SUCCESS;
+}
+
+t_err_codes px_rs_vk_init(PX_WContext* ctx) {
+	if (ctx->backend != PX_RS_GPU_BACKEND_VULKAN) return ERR_RS_INVALID_BACKEND;
 	if (gr_vk_loader.loaded && gr_vk_loader.lib) return ERR_SUCCESS;
 
 	struct vulkan_loader vkli = {0};
@@ -273,7 +476,7 @@ t_err_codes px_rs_vk_init(void) {
 
 	t_err_codes late_err_code = ERR_SUCCESS;
 
-	late_err_code = pxvk_load_extensions_and_layers((const char**)layers, 1, NULL, 0);
+	late_err_code = pxvk_load_extensions_and_layers((const char**)layers, 1, ctx->vulkan.required_extensions, ctx->vulkan.required_extension_count);
 	if (late_err_code != ERR_SUCCESS) goto late_fail;
 
 	VkApplicationInfo app_info = {
@@ -292,8 +495,8 @@ t_err_codes px_rs_vk_init(void) {
 		.pApplicationInfo = &app_info,
 		.enabledLayerCount = 1,
 		.ppEnabledLayerNames = layers,
-		.enabledExtensionCount = 0,
-		.ppEnabledExtensionNames = VK_NULL_HANDLE
+		.enabledExtensionCount = ctx->vulkan.required_extension_count,
+		.ppEnabledExtensionNames = ctx->vulkan.required_extensions
 	};
 
 	VkResult result = vkli.CreateInstance(&instance_info, VK_NULL_HANDLE, &gr_vk_base->instance);
@@ -346,11 +549,136 @@ t_err_codes px_rs_vk_init(void) {
 		goto late_fail;
 	}
 
-	late_err_code = pxvk_load_best_gpu(&gr_vk_base->physical_device, &gr_vk_base->physical_device_properties, &gr_vk_base->physical_device_features, &gr_vk_base->physical_device_memory_properties);
+	gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+	if (!gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceQueueFamilyProperties'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetPhysicalDeviceSurfaceSupportKHR = (PFN_vkGetPhysicalDeviceSurfaceSupportKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceSupportKHR");
+	if (!gr_vk_loader.GetPhysicalDeviceSurfaceSupportKHR) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceSupportKHR'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR = (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+	if (!gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceCapabilitiesKHR'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR = (PFN_vkGetPhysicalDeviceSurfaceFormatsKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
+	if (!gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceFormatsKHR'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR = (PFN_vkGetPhysicalDeviceSurfacePresentModesKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
+	if (!gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfacePresentModesKHR'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetDeviceProcAddr");
+	if (!gr_vk_loader.GetDeviceProcAddr) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceProcAddr'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.CreateDevice = (PFN_vkCreateDevice)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkCreateDevice");
+	if (!gr_vk_loader.CreateDevice) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkCreateDevice'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.DestroyDevice = (PFN_vkDestroyDevice)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDestroyDevice");
+	if (!gr_vk_loader.DestroyDevice) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroyDevice'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.DestroySurfaceKHR = (PFN_vkDestroySurfaceKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDestroySurfaceKHR");
+	if (!gr_vk_loader.DestroySurfaceKHR) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroySurfaceKHR'\n");
+		
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	late_err_code = px_ws_vk_finish_ctx(ctx, gr_vk_base->instance, gr_vk_loader.GetInstanceProcAddr);
 	if (late_err_code != ERR_SUCCESS) {
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		goto late_fail;
 	}
+
+	gr_vk_base->surface = (VkSurfaceKHR)ctx->vulkan.surfaceKHR;
+
+	late_err_code = pxvk_load_best_gpu(&gr_vk_base->physical_device, gr_vk_base->surface);
+	if (late_err_code != ERR_SUCCESS) {
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		goto late_fail;
+	}
+
+	const char* device_extensions[] = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
+	late_err_code = pxvk_create_device(&gr_vk_base->device.device, VK_NULL_HANDLE, 0, (const char**)device_extensions, 1);
+	if (late_err_code != ERR_SUCCESS) {
+		if (gr_vk_base->physical_device.queue_families) free(gr_vk_base->physical_device.queue_families);
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		goto late_fail;
+	}
+
+	gr_vk_loader.DeviceWaitIdle = (PFN_vkDeviceWaitIdle)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDeviceWaitIdle");
+	if (!gr_vk_loader.DeviceWaitIdle) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDeviceWaitIdle'\n");
+		
+		if (gr_vk_base->physical_device.queue_families) free(gr_vk_base->physical_device.queue_families);		
+		gr_vk_loader.DestroyDevice(gr_vk_base->device.device, VK_NULL_HANDLE);
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetDeviceQueue = (PFN_vkGetDeviceQueue)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkGetDeviceQueue");
+	if (!gr_vk_loader.GetDeviceQueue) {
+		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceQueue'\n");
+
+		if (gr_vk_base->physical_device.queue_families) free(gr_vk_base->physical_device.queue_families);		
+		gr_vk_loader.DestroyDevice(gr_vk_base->device.device, VK_NULL_HANDLE);
+		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
+		late_err_code = ERR_VK_LIB_LOAD_FAILED;
+		goto late_fail;
+	}
+
+	gr_vk_loader.GetDeviceQueue(gr_vk_base->device.device, gr_vk_base->physical_device.graphics_queue_family_idx, 0, &gr_vk_base->device.graphics_queue);
+	gr_vk_loader.GetDeviceQueue(gr_vk_base->device.device, gr_vk_base->physical_device.present_queue_family_idx, 0, &gr_vk_base->device.present_queue);
 
 	return ERR_SUCCESS;
 
@@ -370,14 +698,35 @@ t_err_codes px_rs_vk_init(void) {
 void px_rs_vk_shutdown(void) {
 	if (!gr_vk_loader.loaded || !gr_vk_loader.lib) return;
 
+	if (gr_vk_base->device.device != VK_NULL_HANDLE && gr_vk_loader.DeviceWaitIdle) {
+        gr_vk_loader.DeviceWaitIdle(gr_vk_base->device.device);
+    }
+
+	if (gr_vk_base->device.device != VK_NULL_HANDLE && gr_vk_loader.DestroyDevice) {
+        gr_vk_loader.DestroyDevice(gr_vk_base->device.device, VK_NULL_HANDLE);
+        gr_vk_base->device = (struct vulkan_device){0};
+    }
+
+	if (gr_vk_base->physical_device.queue_families) {
+		free(gr_vk_base->physical_device.queue_families);
+		gr_vk_base->physical_device.queue_families = VK_NULL_HANDLE;
+		gr_vk_base->physical_device.queue_family_count = 0;
+		gr_vk_base->physical_device.graphics_queue_family_idx = 0;
+	}
+	
+	if ((gr_vk_base->instance != VK_NULL_HANDLE && gr_vk_base->physical_device.device != VK_NULL_HANDLE) && (gr_vk_loader.DestroySurfaceKHR && gr_vk_base->surface != VK_NULL_HANDLE)) {
+        gr_vk_loader.DestroySurfaceKHR(gr_vk_base->instance, gr_vk_base->surface, VK_NULL_HANDLE);
+        gr_vk_base->surface = VK_NULL_HANDLE;
+    }
+
 	if (gr_vk_base->instance != VK_NULL_HANDLE && gr_vk_loader.DestroyInstance) gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 
 	dlclose(gr_vk_loader.lib);
 	gr_vk_loader = (struct vulkan_loader){0};
 }
 
-t_err_codes px_rs_vk_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) { return ERR_UNIMPLEMENTED; }
-t_err_codes px_rs_vk_init_2d(PX_Scale2 screen_scale) { return ERR_UNIMPLEMENTED; }
+t_err_codes px_rs_vk_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos) { return ERR_SUCCESS; }
+t_err_codes px_rs_vk_init_2d(PX_Scale2 screen_scale) { return ERR_SUCCESS; }
 void px_rs_vk_shutdown_2d(void) {}
 void px_rs_vk_shutdown_3d(void) {}
 void px_rs_vk_frame_start(void) {}

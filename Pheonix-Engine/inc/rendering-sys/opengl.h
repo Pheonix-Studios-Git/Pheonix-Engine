@@ -15,7 +15,7 @@
 
 #define __PHEONIX_ENGINE__RENDERING_SYS__OPENGL_IMP__
 
-t_err_codes px_rs_gl_init(void);
+t_err_codes px_rs_gl_init(PX_WContext* ctx);
 t_err_codes px_rs_gl_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos);
 t_err_codes px_rs_gl_init_2d(PX_Scale2 screen_scale);
 void px_rs_gl_shutdown_2d(void);

@@ -417,8 +417,30 @@ typedef struct {
 	PX_TextureAddressMode address_w;
 } PX_Sampler;
 
+// Window Structures related to Rendering
+typedef struct {
+	void* ictx;
+} PX_WOpenGLContext;
+
+typedef struct {
+	const char** required_extensions;
+	size_t required_extension_count;
+
+	PX_GPU_Handle surfaceKHR;
+} PX_WVulkanContext;
+
+typedef struct {
+	PX_GPU_Backend backend;
+	void* iwin;
+
+	union {
+		PX_WOpenGLContext opengl;
+		PX_WVulkanContext vulkan;
+	};
+} PX_WContext;
+
 // Core
-t_err_codes px_rs_init(void); // Initialize Base Rendering Engine
+t_err_codes px_rs_init(PX_WContext* ctx); // Initialize Base Rendering Engine
 t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Initialize 3D Rendering Engine
 t_err_codes px_rs_init_2d(PX_Scale2 screen_scale); // Initialize UI Rendering Engine
 void px_rs_shutdown_2d(void); // Shutdown UI Rendering Engine
