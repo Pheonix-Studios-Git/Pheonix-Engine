@@ -1,6 +1,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <pheonix-engine.h>
+
 #include <err-codes.h>
 #include <event-sys.h>
 #include <window-sys.h>
@@ -13,6 +15,43 @@ static PX_Scale2 mwindow_s = {0};
 static PX_Vector2 mouse_pos = {0};
 static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
 static int gsignals_count = 0;
+
+static PX_Transform2 combine_transform2(PX_Transform2 parent, PX_Transform2 local) {
+    PX_Transform2 out = {0};
+
+    out.scale.w = local.scale.w;
+    out.scale.h = local.scale.h;
+	out.rot = parent.rot + local.rot;
+
+	float c = cosf(parent.rot);
+    float s = sinf(parent.rot);
+
+	float rotated_x = local.pos.x * c - local.pos.y * s;
+    float rotated_y = local.pos.x * s + local.pos.y * c;
+
+    out.pos.x = parent.pos.x + rotated_x;
+    out.pos.y = parent.pos.y + rotated_y;
+    return out;
+}
+
+static PX_Transform2 dropdown_transform(PX_Dropdown* dd) {
+    return (PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}, 0.0f};
+}
+
+static PX_Transform2 dropdown_item_transform(PX_Dropdown* dd, PX_DropdownItem* item, int x) {
+    PX_Transform2 dd_tran = dropdown_transform(dd);
+    PX_Transform2 item_tran = {(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height }, 0.0f};
+    return combine_transform2(dd_tran, item_tran);
+}
+
+static PX_Transform2 dropdown_panel_transform(PX_Dropdown* dd, PX_DropdownItem* item, int x) {
+    PX_Transform2 dd_tran = dropdown_transform(dd);
+
+    PX_Transform2 item_tran = {(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height}, 0.0f};
+    PX_Transform2 panel_tran = combine_transform2(item_tran, item->panel_tran);
+
+    return combine_transform2(dd_tran, panel_tran);
+}
 
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
     mwindow_s = main_window_scale;
@@ -27,7 +66,20 @@ void event_mouse_move(PX_Vector2 mouse_position) {
     mouse_pos = mouse_position;
 }
 
-static bool is_mouse_on(PX_Transform2 tran) {
+bool is_mouse_on(PX_Transform2 tran) {
+    PX_Vector2 pos = tran.pos;
+    PX_Scale2 scale = tran.scale;
+    return (bool)(
+        mouse_pos.x >= pos.x &&
+        mouse_pos.x <= pos.x + scale.w &&
+        mouse_pos.y >= pos.y &&
+        mouse_pos.y <= pos.y + scale.h
+    );
+}
+
+bool is_mouse_on_anchor(PX_AnchorRect anchor) {
+	PX_Transform2 tran = enginef_convert_anchor_to_transform(anchor);
+
     PX_Vector2 pos = tran.pos;
     PX_Scale2 scale = tran.scale;
     return (bool)(
@@ -46,45 +98,57 @@ void event_hover_dropdown(PX_Dropdown* dd) {
             open_index = i;
         }
     }
+	dd->hover_index = -1;
 
-    PX_Scale2 dd_scale = (PX_Scale2){dd->width, dd->height};
-    PX_Transform2 dd_tran = (PX_Transform2){dd->pos, dd_scale};
-    dd->hover_index = -1;
+    PX_Transform2 dd_tran = dropdown_transform(dd);
+    bool mouse_on_dropdown = is_mouse_on(dd_tran);
+    if (!mouse_on_dropdown && open_index == -1) return;
 
-    if (!is_mouse_on(dd_tran)  && open_index == -1)
-        return;
-
-    if (is_mouse_on(dd_tran)) {
+    if (mouse_on_dropdown) {
         // It is on dropdown
         int x = dd->stext_pos.x;
         for (int i = 0; i < dd->item_count; i++) {
             PX_DropdownItem* item = &dd->items[i];
 
-            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height}};
+            PX_Transform2 tran = dropdown_item_transform(dd, item, x);
             if (is_mouse_on(tran)) {
                 dd->hover_index = i;
                 return;
             }
 
-            x += dd->spacing + px_rs_text_width(dd->font, item->label, dd->font_size);
+            x += item->width + dd->spacing;
         }
     } else {
         // It is on a panel
-        PX_DropdownItem* opened_panel = &dd->items[open_index];
-        int y = opened_panel->stext_pos.y;
-        for (int i = 0; i < opened_panel->option_count; i++) {
-            PX_DropdownOption* op = &opened_panel->options[i];
+        PX_DropdownItem* item = &dd->items[open_index];
 
-            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){opened_panel->stext_pos.x, y}, (PX_Scale2){op->width, op->height}};
-            if (is_mouse_on(tran)) {
-                opened_panel->hover_index = i;
-            }
-            y += opened_panel->spacing;
-        }
+		int x = dd->stext_pos.x;
+		for (int i = 0; i < open_index; i++) {
+			x += dd->items[i].width + dd->spacing;
+		}
+
+		PX_Transform2 panel_tran = dropdown_panel_transform(dd, item, x);
+		int y = item->stext_pos.y;
+
+		for (int i = 0; i < item->option_count; i++) {
+			PX_DropdownOption* option = &item->options[i];
+			PX_Transform2 option_tran = {
+				(PX_Vector2){panel_tran.pos.x + item->stext_pos.x, panel_tran.pos.y + y},
+				(PX_Scale2){option->width, option->height},
+				0.0f
+			};
+
+			if (is_mouse_on(option_tran)) {
+				item->hover_index = i;
+				return;
+			}
+
+			y += item->spacing;
+		}
     }
 }
 
-void event_click_dropdown(PX_Dropdown* dd) {
+void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too) {
     int open_index = -1;
     for (int i = 0; i < dd->item_count; i++) {
         if ((&dd->items[i])->is_open) {
@@ -94,37 +158,50 @@ void event_click_dropdown(PX_Dropdown* dd) {
     }
 
     if (open_index > -1) {
-        PX_DropdownItem* opened_panel = &dd->items[open_index];
-        int y = opened_panel->stext_pos.y;
+		PX_DropdownItem* item = &dd->items[open_index];
+		int x = dd->stext_pos.x;
+		for (int i = 0; i < open_index; i++) {
+			x += dd->items[i].width + dd->spacing;
+		}
 
-        for (int j = 0; j < opened_panel->option_count; j++) {
-            PX_DropdownOption* op = &opened_panel->options[j];
-            PX_Transform2 op_tran = (PX_Transform2){(PX_Vector2){opened_panel->stext_pos.x, y}, (PX_Scale2){op->width, op->height}};
-            if (is_mouse_on(op_tran)) {
-                PX_Event_GSignal signal = {0};
+		PX_Transform2 panel_tran = dropdown_panel_transform(dd, item, x);
+		int y = item->stext_pos.y;
+
+		for (int i = 0; i < item->option_count; i++) {
+			PX_DropdownOption* option = &item->options[i];
+			PX_Transform2 option_tran = {
+				(PX_Vector2){panel_tran.pos.x + item->stext_pos.x, panel_tran.pos.y + y},
+				(PX_Scale2){option->width, option->height},
+				0.0f
+			};
+
+			if (is_mouse_on(option_tran)) {
+				PX_Event_GSignal signal = {0};
                 signal.type = EVENT_GSIGNAL_UI_DROPDOWN_CLICK;
-                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){dd, open_index, j};
+                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){dd, open_index, i};
                 event_send_gsignal(&signal);
-                opened_panel->is_open = false;
-                return;
-            }
-            y += opened_panel->spacing;
-        }
+                item->is_open = false;
+				return;
+			}
+
+			y += item->spacing;
+		}
     }
 
-    PX_Scale2 dd_scale = (PX_Scale2){dd->width, dd->height};
-    PX_Transform2 dd_tran = (PX_Transform2){dd->pos, dd_scale};
+	PX_Transform2 dd_tran = dropdown_transform(dd);
+    bool mouse_on_dropdown = is_mouse_on(dd_tran);
+    if (!mouse_on_dropdown && open_index == -1) {
+		if (close_main_panel_too) dd->visible = false;
+		return;
+	}
 
-    if (!is_mouse_on(dd_tran) && open_index == -1)
-        return;
-
-    if (is_mouse_on(dd_tran)) {
+    if (mouse_on_dropdown) {
         // It is on dropdown
         int x = dd->stext_pos.x;
         for (int i = 0; i < dd->item_count; i++) {
             PX_DropdownItem* item = &dd->items[i];
+            PX_Transform2 tran = dropdown_item_transform(dd, item, x);
 
-            PX_Transform2 tran = (PX_Transform2){(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height}};
             if (is_mouse_on(tran) && open_index != i) {
                 item->is_open = true;
                 (&dd->items[open_index])->is_open = false;
@@ -133,7 +210,7 @@ void event_click_dropdown(PX_Dropdown* dd) {
                 item->is_open = false;
             }
 
-            x += dd->spacing + px_rs_text_width(dd->font, item->label, dd->font_size);
+            x += dd->spacing + item->width;
         }
     }
 

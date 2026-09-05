@@ -119,6 +119,7 @@ typedef struct {
     int item_count;
 
     int hover_index;
+	bool visible;
 } PX_Dropdown;
 
 typedef enum {
@@ -176,6 +177,8 @@ typedef struct PX_2D_Object {
 
     struct PX_2D_Object* children[10]; // 10 MAX Children for now
     bool has_children;
+
+	bool screen_pos_fixed;
 
     void* ex_data; // for sprites, its batch_2d struct
     PX_2D_Object_Type ex_data_type;
@@ -441,8 +444,8 @@ typedef struct {
 
 // Core
 t_err_codes px_rs_init(PX_WContext* ctx); // Initialize Base Rendering Engine
-t_err_codes px_rs_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Initialize 3D Rendering Engine
-t_err_codes px_rs_init_2d(PX_Scale2 screen_scale); // Initialize UI Rendering Engine
+t_err_codes px_rs_init_3d(PX_AnchorRect viewport); // Initialize 3D Rendering Engine
+t_err_codes px_rs_init_2d(PX_AnchorRect viewport); // Initialize UI Rendering Engine
 void px_rs_shutdown_2d(void); // Shutdown UI Rendering Engine
 void px_rs_shutdown_3d(void); // Shutdown 3D Rendering Engine
 void px_rs_shutdown(void); // Shutdown All Rendering Engines
@@ -451,20 +454,21 @@ void px_rs_frame_end(void); // End Frame
 void px_rs_2d_frame_update(void); // Update Frame for UI Rendering Engine
 void px_rs_3d_frame_update(void); // Update Frame for 3D Rendering Engine
 void px_rs_frame_update(void); // Update Frame for All Rendering Engines
-void px_rs_2d_resize(PX_Scale2 screen_scale); // Resize Viewport for UI Rendering Engine
-void px_rs_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos); // Resize Viewport for 3D Rendering Engine
+void px_rs_2d_resize(PX_AnchorRect viewport); // Resize Viewport for UI Rendering Engine
+void px_rs_3d_resize(PX_AnchorRect viewport); // Resize Viewport for 3D Rendering Engine
 void px_rs_update_scene_cam_3d(PX_Vector2 mdelta, PX_EKeycodes key); // Updates the 3D Scene Camera
 void px_rs_update_scene_cam_2d(PX_Vector2 mdelta, PX_EKeycodes key); // Update the 2D Scene Camera
-void px_rs_config_scene_cam(float mouse_sensitivity, float speed); // Configurate Scene Camera
-t_err_codes px_rs_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius); // Draw a UI Panel
+void px_rs_config_scene_cam_3d(float mouse_sensitivity, float speed); // Configurate 3D Scene Camera
+void px_rs_config_scene_cam_2d(float speed); // Configurate 2D Scene Camera
+t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 tran, PX_Color4 color, float noise, float cradius, bool fixed_on_screen); // Draw a UI Panel
 int px_rs_text_width(struct PX_Font* font, const char* text, float pixel_height); // Get Final Width of UI Text on Screen without Drawing it
-t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, struct PX_Font* font); // Render UI Text on Screen
-t_err_codes px_rs_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color); // Draw a UI Line on Screen
-t_err_codes px_rs_draw_dropdown(PX_Dropdown* dd); // Draw a UI Dropdown on Screen
+t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRect local_viewport, PX_Vector2 pos, PX_Color4 color, struct PX_Font* font); // Render UI Text on Screen
+t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color); // Draw a UI Line on Screen
+t_err_codes px_rs_draw_dropdown(PX_AnchorRect local_viewport, PX_Dropdown* dd); // Draw a UI Dropdown on Screen
 t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene); // Draw 3D Editor Objects in Viewport
 t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene); // Draw all 3D Objects in Viewport
-t_err_codes px_rs_draw_editor_objects_2d(PX_Scene_2D* scene); // Draw 2D Editor Objects on Screen
-t_err_codes px_rs_draw_scene_2d(PX_Scene_2D* scene); // Draw all 2D Objects on Screen
+t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene); // Draw 2D Editor Objects on Screen
+t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene); // Draw all 2D Objects on Screen
 void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale); // Handle Mouse Movement for Events and more
 t_err_codes px_rs_change_backend(PX_GPU_Backend new_backend); // Change GPU API Backend
 

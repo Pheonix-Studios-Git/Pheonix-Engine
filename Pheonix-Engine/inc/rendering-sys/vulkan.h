@@ -12,8 +12,8 @@
 #define __PHEONIX_ENGINE__RENDERING_SYS__VULKAN_IMP__
 
 t_err_codes px_rs_vk_init(PX_WContext* ctx);
-t_err_codes px_rs_vk_init_3d(PX_Scale2 screen_scale, PX_Vector2 screen_pos);
-t_err_codes px_rs_vk_init_2d(PX_Scale2 screen_scale);
+t_err_codes px_rs_vk_init_3d(PX_AnchorRect viewport);
+t_err_codes px_rs_vk_init_2d(PX_AnchorRect viewport);
 void px_rs_vk_shutdown_2d(void);
 void px_rs_vk_shutdown_3d(void);
 void px_rs_vk_shutdown(void);
@@ -22,16 +22,11 @@ void px_rs_vk_frame_end(void);
 void px_rs_vk_2d_frame_update(void);
 void px_rs_vk_3d_frame_update(void);
 void px_rs_vk_frame_update(void);
-void px_rs_vk_2d_resize(PX_Scale2 screen_scale);
-void px_rs_vk_3d_resize(PX_Scale2 screen_scale, PX_Vector2 screen_pos);
-t_err_codes px_rs_vk_draw_panel(PX_Transform2 tran, PX_Color4 color, float noise, float cradius);
-t_err_codes px_rs_vk_render_text(const char* text, float pixel_height, PX_Vector2 pos, PX_Color4 color, PX_Font* font);
-t_err_codes px_rs_vk_draw_line(PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color);
-t_err_codes px_rs_vk_draw_dropdown(PX_Dropdown* dd);
-t_err_codes px_rs_vk_draw_editor_objects_3d(PX_Scene_3D* scene);
-t_err_codes px_rs_vk_draw_scene_3d(PX_Scene_3D* scene);
-t_err_codes px_rs_vk_draw_editor_objects_2d(PX_Scene_2D* scene);
-t_err_codes px_rs_vk_draw_scene_2d(PX_Scene_2D* scene);
+void px_rs_vk_2d_resize(PX_AnchorRect viewport);
+void px_rs_vk_3d_resize(PX_AnchorRect viewport);
+PX_GPU_Handle px_rs_vk_get_flat_fbo(void);
+PX_GPU_Handle px_rs_vk_get_blank_tex(void);
+PX_Scale2 px_rs_vk_get_flat_fbo_scale(void);
 void px_rs_vk_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale);
 t_err_codes px_rs_vk_create_texture(PX_Texture* texture);
 t_err_codes px_rs_vk_upload_texture(PX_Texture* texture, PX_TextureFormat source_format, uint32_t mip_level, const void* data);

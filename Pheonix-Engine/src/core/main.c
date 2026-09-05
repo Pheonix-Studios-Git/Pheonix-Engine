@@ -20,6 +20,7 @@ typedef struct {
     char* build_psdf_json;
     char* build_psdf_out;
     bool help;
+	bool vsync;
 	PX_EditorMode base_scene_type;
 	PX_GPU_Backend gpu_backend;
 } t_args;
@@ -64,8 +65,9 @@ static int engine_mouse_saved_y = 0;
 static bool engine_mouse_locked = false;
 static bool engine_mouse_ignore1 = false;
 
-// Rendering Objects
+// Dropdowns
 static PX_Dropdown engine_menu_dropdown = {0};
+static PX_Dropdown engine_scene_panel_context_menu = {0};
 
 // Colors
 static PX_Color4 engine_2d_black_panel_color = (PX_Color4){0x1A, 0x1A, 0x1A, 0xFF};
@@ -101,24 +103,27 @@ static bool engine_3drenderer_hover_on_gizmo = false;
 
 // 2D Renderer
 PX_Scene_2D engine_2drenderer_main_scene = {0};
-static float engine_2drenderer_scene_cam_speed = 1.0f;
+static float engine_2drenderer_scene_cam_speed = 6.0f;
 static bool engine_2drenderer_scene_cam_speed_doubled = false;
 static bool engine_2drenderer_hover_on_gizmo = false;
 
 // Anchors
 static PX_AnchorRect engine_anchor_menubar = {
-    .x = 0, .y = 0,
+    .x = 0.0f, .y = 0.0f,
     .w = 1.0f, .h = 0.05f
 };
 static PX_AnchorRect engine_anchor_scene_panel = {
-    .x = 0, .y = 0.05f,
+    .x = 0.0f, .y = 0.05f,
     .w = 0.25f, .h = 0.95f
 };
 static PX_AnchorRect engine_anchor_scene_editor = {
     .x = 0.25f, .y = 0.05f,
     .w = 0.75f, .h = 0.95f
 };
-
+static PX_AnchorRect engine_anchor_all = {
+    .x = 0.0f, .y = 0.0f,
+    .w = 1.0f, .h = 1.0f
+};
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -126,6 +131,7 @@ static void print_help(void) {
     printf("\tbuild-psdf <.json file containing SDF info> <output PSDF path>: Builds PSDF files from SDF files\n");
 	printf("\tbase-scene-type <3d|2d>: Specifies the starting scene type. Value can be only '3d' or '2d'\n");
 	printf("\tgpu-backend <vulkan|opengl>: Specifies the GPU Backend API to use. Value can be only 'vulkan' or 'opengl'\n");
+	printf("\tno-vsync: Turns off Vertical Synchronization\n");
     printf("\thelp: Prints this help message\n");
 }
 
@@ -137,6 +143,7 @@ static void parse_args(t_args* args, int argc, char** argv) {
     args->build_psdf_out = NULL;
 	args->base_scene_type = PX_EDITOR_MODE_3D;
 	args->gpu_backend = PX_RS_GPU_BACKEND_OPENGL;
+	args->vsync = true;
     
     for (int i = 1; i < argc; i++) {
         char* opt = argv[i];
@@ -187,6 +194,8 @@ static void parse_args(t_args* args, int argc, char** argv) {
                 args->valid = false;
                 break;
 			}
+		} else if (strcmp(opt, "--no-vsync") == 0) {
+			args->vsync = false;
 		} else {
             fprintf(stderr, "Usage: pheonix-engine [--COMMANDS]\n\tUse --help for more info!\n");
             args->valid = false;
@@ -196,23 +205,27 @@ static void parse_args(t_args* args, int argc, char** argv) {
 }
 
 static char* enginef_helper_strdup(const char* s) {
-    char* out = (char*)malloc(strlen(s) + 1);
-    if (!out)
-        return NULL;
+	size_t len = strlen(s);
 
-    strcpy(out, s);
-    out[strlen(s) + 1] = '\0';
+    char* out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+
+    memcpy(out, s, len);
+	out[len] = '\0';
     return out;
 }
 
 static void enginef_cleanup(void) {
     for (int i = 0; i < engine_menu_dropdown.item_count; i++) {
-        if (engine_menu_dropdown.items[i].label)
-            free(engine_menu_dropdown.items[i].label);
-
+        if (engine_menu_dropdown.items[i].label) free(engine_menu_dropdown.items[i].label);
         for (int j = 0; j < engine_menu_dropdown.items[i].option_count; j++) {
-            if (engine_menu_dropdown.items[i].options[j].label)
-                free(engine_menu_dropdown.items[i].options[j].label);
+            if (engine_menu_dropdown.items[i].options[j].label) free(engine_menu_dropdown.items[i].options[j].label);
+        }
+    }
+	for (int i = 0; i < engine_scene_panel_context_menu.item_count; i++) {
+        if (engine_scene_panel_context_menu.items[i].label) free(engine_scene_panel_context_menu.items[i].label);
+        for (int j = 0; j < engine_scene_panel_context_menu.items[i].option_count; j++) {
+            if (engine_scene_panel_context_menu.items[i].options[j].label) free(engine_scene_panel_context_menu.items[i].options[j].label);
         }
     }
 
@@ -222,7 +235,7 @@ static void enginef_cleanup(void) {
     px_ws_shutdown();
 }
 
-static PX_Transform2 enginef_convert_anchor_to_transform(PX_AnchorRect r) {
+PX_Transform2 enginef_convert_anchor_to_transform(PX_AnchorRect r) {
     return (PX_Transform2){
         .pos = {
             .x = r.x * engine_window_main_w,
@@ -252,6 +265,7 @@ static void enginef_init_dropdowns(void) {
     engine_menu_dropdown.spacing = 64;
     engine_menu_dropdown.noise = 0.03f;
     engine_menu_dropdown.cradius = 0.0f;
+	engine_menu_dropdown.visible = true;
 
     const char* menu_labels[] = {"File", "Edit", "View", "Help"};
     const char* file_menu[] = {"New", "Open", "Save", "Save As", "Import", "Exit"};
@@ -280,12 +294,12 @@ static void enginef_init_dropdowns(void) {
         item->panel_noise = 0.03f;
         item->panel_cradius = 16.0f;
         item->panel_tran = (PX_Transform2){
-            (PX_Vector2){x, 32},
+            (PX_Vector2){0, engine_menu_dropdown.height}, // How away from main panel
             (PX_Scale2){100, item->spacing * item->option_count + 16}
         };
-        item->stext_pos = (PX_Vector2){x + 6, 42};
+        item->stext_pos = (PX_Vector2){6, 10};
 
-        x += engine_menu_dropdown.spacing + px_rs_text_width(engine_menu_dropdown.font, item->label, engine_menu_dropdown.font_size);
+        x += item->width + engine_menu_dropdown.spacing;
 
         for (int j = 0; j < item->option_count; j++) {
             PX_DropdownOption* option = &item->options[j];
@@ -310,11 +324,77 @@ static void enginef_init_dropdowns(void) {
         .identifier = "menubar"
     };
     engine_obj_identifiers_x[engine_obj_identifier_count-1] = (PX_Event_Identifier*)&engine_obj_identifiers[engine_obj_identifier_count-1];
+
+	engine_scene_panel_context_menu.font = engine_font_ui;
+    engine_scene_panel_context_menu.font_size = 18.0f;
+    engine_scene_panel_context_menu.pos = (PX_Vector2){0};
+    engine_scene_panel_context_menu.width = 100;
+    engine_scene_panel_context_menu.height = 100;
+    engine_scene_panel_context_menu.color = engine_2d_black_panel_color;
+    engine_scene_panel_context_menu.hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xD4};
+    engine_scene_panel_context_menu.text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
+    engine_scene_panel_context_menu.hover_index = -2;
+    engine_scene_panel_context_menu.item_count = 1;
+    engine_scene_panel_context_menu.stext_pos = (PX_Vector2){4, 8};
+    engine_scene_panel_context_menu.spacing = 22;
+    engine_scene_panel_context_menu.noise = 0.03f;
+    engine_scene_panel_context_menu.cradius = 25.0f;
+	engine_scene_panel_context_menu.visible = false;
+
+    const char* scene_panel_context_menu_labels[] = {"Create"};
+    const char* create_context_menu[] = {"Panel"};
+
+    engine_scene_panel_context_menu.items[0].option_count = 1;
+
+    for (int i = 0; i < 1; i++) {
+        PX_DropdownItem* item = &engine_scene_panel_context_menu.items[i];
+        item->label = enginef_helper_strdup(scene_panel_context_menu_labels[i]);
+        item->height = 16;
+        item->width = px_rs_text_width(engine_font_ui, menu_labels[i], engine_scene_panel_context_menu.font_size);
+        item->spacing = 16;
+        item->font_size = 14.0f;;
+        item->panel_color = engine_2d_black_panel_color;
+        item->hover_color = (PX_Color4){0xD4, 0xD4, 0xD4, 0xFF};
+        item->text_color = (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
+        item->is_open = false;
+        item->hover_index = -1;
+        item->panel_noise = 0.03f;
+        item->panel_cradius = 16.0f;
+        item->panel_tran = (PX_Transform2){
+            (PX_Vector2){engine_scene_panel_context_menu.width + 16, 0},
+            (PX_Scale2){100, item->spacing * item->option_count + 16}
+        };
+        item->stext_pos = (PX_Vector2){6, 10};
+
+        x += engine_scene_panel_context_menu.spacing + px_rs_text_width(engine_scene_panel_context_menu.font, item->label, engine_scene_panel_context_menu.font_size);
+
+        for (int j = 0; j < item->option_count; j++) {
+            PX_DropdownOption* option = &item->options[j];
+            const char** labels = NULL;
+
+            switch(i) {
+                case 0: labels = create_context_menu; break;
+                default: break;
+            }
+
+            option->label = enginef_helper_strdup(labels[j]);
+            option->height = 8;
+            option->width = px_rs_text_width(engine_font_ui, labels[j], engine_scene_panel_context_menu.font_size);
+        }
+    }
+
+    engine_obj_identifiers[engine_obj_identifier_count++] = (PX_Event_Identifier){
+        .ptr = (void*)&engine_scene_panel_context_menu,
+        .identifier = "scene-panel-context-menu"
+    };
+    engine_obj_identifiers_x[engine_obj_identifier_count-1] = (PX_Event_Identifier*)&engine_obj_identifiers[engine_obj_identifier_count-1];
 }
 
 static void enginef_event_mouse_click(void) {
     // Dropdowns
-    event_click_dropdown(&engine_menu_dropdown);
+    event_click_dropdown(&engine_menu_dropdown, false);
+	event_click_dropdown(&engine_scene_panel_context_menu, true);
+
     // Scene Panel
     editor_click_scene_panel(
         (PX_Vector2){engine_mouse_x, engine_mouse_y},
@@ -327,11 +407,13 @@ static void enginef_event_mouse_click(void) {
 static void enginef_event_hover_check(void) {
     // Dropdowns
     event_hover_dropdown(&engine_menu_dropdown);
+	event_hover_dropdown(&engine_scene_panel_context_menu);
 }
 
 static void enginef_core_render(void) {
     // Scene Panel
     editor_draw_scene_panel(
+		engine_anchor_all,
         (PX_Vector2){engine_mouse_x, engine_mouse_y},
         enginef_convert_anchor_to_transform(engine_anchor_scene_panel),
         (PX_Color4){0xFF, 0xFF, 0xFF, 0xFF},
@@ -348,7 +430,8 @@ static void enginef_core_render(void) {
     engine_menu_dropdown.width = menubar_t.scale.w;
     engine_menu_dropdown.height = menubar_t.scale.h;
     engine_menu_dropdown.pos = menubar_t.pos;
-    px_rs_draw_dropdown(&engine_menu_dropdown);
+    px_rs_draw_dropdown(engine_anchor_all, &engine_menu_dropdown);
+	px_rs_draw_dropdown(engine_anchor_all, &engine_scene_panel_context_menu);
 
     // Gizmos
     if (engine_3drenderer_main_scene.active_object != NULL) {
@@ -361,7 +444,7 @@ static void enginef_core_render(void) {
     }
 	if (engine_2drenderer_main_scene.active_object != NULL) {
         if (engine_2drenderer_gizmo_idx > 0 && engine_2drenderer_gizmo_idx < engine_2drenderer_main_scene.editor_object_count) {
-            PX_2D_Editor_Object* gizmo = &engine_2drenderer_main_scene.editor_objects[engine_3drenderer_gizmo_idx];
+            PX_2D_Editor_Object* gizmo = &engine_2drenderer_main_scene.editor_objects[engine_2drenderer_gizmo_idx];
             gizmo->local_transform = engine_2drenderer_main_scene.active_object->local_transform;
             gizmo->world_transform = engine_2drenderer_main_scene.active_object->world_transform;
             gizmo->active = true;
@@ -443,8 +526,6 @@ void enginef_init_3drenderer_main_scene(void) {
 }
 
 void enginef_init_2drenderer_main_scene(void) {
-	PX_Transform2 worldT = enginef_convert_anchor_to_transform(engine_anchor_scene_editor);
-
     PX_2D_Editor_Object gridlines = {
         .active = true,
         .name = "Grid Lines",
@@ -452,7 +533,7 @@ void enginef_init_2drenderer_main_scene(void) {
         .has_children = false,
         .static_object = true,
         .local_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
-        .world_transform = worldT,
+        .world_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
         .ex_data_type = PX_RS_OBJECT_2D_EDITOR_GRID,
         .ex_data = &engine_2drenderer_editor_grid,
         .id = 0
@@ -465,7 +546,7 @@ void enginef_init_2drenderer_main_scene(void) {
         .has_children = false,
         .static_object = true,
         .local_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
-        .world_transform = worldT,
+        .world_transform = (PX_Transform2){.pos=(PX_Vector2){0, 0}, .scale=(PX_Scale2){1, 1}, .rot=0},
         .ex_data_type = PX_RS_OBJECT_2D_EDITOR_GIZMO,
         .ex_data = &engine_2drenderer_hover_on_gizmo,
         .id = 1
@@ -533,7 +614,7 @@ int main(int argc, char** argv) {
     }
 
     px_ws_window_design(&engine_window_main, &engine_window_main_design);
-    
+    engine_window_main.vsync_off = !passed_args.vsync;
     px_ws_create_ctx(&engine_window_main);
 
 	last_err = px_ws_get_ctx(&engine_window_main, &engine_window_context_main);
@@ -560,7 +641,7 @@ int main(int argc, char** argv) {
         return last_err;
     }
 
-    last_err = px_rs_init_2d((PX_Scale2){engine_window_main_w, engine_window_main_h});
+    last_err = px_rs_init_2d(engine_anchor_all);
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize UI rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
@@ -568,7 +649,7 @@ int main(int argc, char** argv) {
         return last_err;
     }
 
-    last_err = px_rs_init_3d((PX_Scale2){engine_window_main_w - (engine_window_main_w / 4), engine_window_main_h - engine_menu_dropdown.height}, (PX_Vector2){engine_window_main_w / 4, engine_menu_dropdown.height});
+    last_err = px_rs_init_3d(engine_anchor_scene_editor);
     if (last_err != ERR_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize 3D rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
@@ -601,7 +682,8 @@ int main(int argc, char** argv) {
 	enginef_init_2drenderer_main_scene();
 
     // Configure Scene Cam
-    px_rs_config_scene_cam(-1.0f, engine_3drenderer_scene_cam_speed);
+    px_rs_config_scene_cam_3d(-1.0f, engine_3drenderer_scene_cam_speed);
+	px_rs_config_scene_cam_2d(engine_2drenderer_scene_cam_speed);
 
     // Frame stuff
     double last_time = enginef_core_get_time();
@@ -642,8 +724,8 @@ int main(int argc, char** argv) {
         
         // Draw 2D
 		if (editor_state->current_mode == PX_EDITOR_MODE_2D) {
-			px_rs_draw_scene_2d(&engine_2drenderer_main_scene);
-			px_rs_draw_editor_objects_2d(&engine_2drenderer_main_scene);
+			px_rs_draw_scene_2d(engine_anchor_scene_editor, &engine_2drenderer_main_scene);
+			px_rs_draw_editor_objects_2d(engine_anchor_scene_editor, &engine_2drenderer_main_scene);
 		}
         enginef_core_render();
 
@@ -681,9 +763,9 @@ int main(int argc, char** argv) {
                     engine_window_main_h = ev.h;
                     engine_window_main.width = ev.w;
                     engine_window_main.height = ev.h;
-                    px_rs_2d_resize((PX_Scale2){ev.w, ev.h});
+                    px_rs_2d_resize(engine_anchor_all);
                     PX_Transform2 scene_editor = enginef_convert_anchor_to_transform(engine_anchor_scene_editor);
-                    px_rs_3d_resize(scene_editor.scale, scene_editor.pos);
+                    px_rs_3d_resize(engine_anchor_scene_editor);
                     event_resize((PX_Scale2){ev.w, ev.h});
                     if (engine_mouse_locked) {
                         px_ws_set_mouse_pos(&engine_window_main, (PX_Vector2){.x=engine_mouse_saved_x,.y=engine_mouse_saved_y});
@@ -714,17 +796,24 @@ int main(int argc, char** argv) {
                             break;
                         }
                         case EKeycode_MouseRButton: {
-                            if (!(
-                                ev.x >= engine_window_main_w / 4 &&
-                                ev.y >= engine_menu_dropdown.height
-                            )) break;
-                            engine_mouse_locked = true;
-                            engine_mouse_saved_x = ev.x;
-                            engine_mouse_saved_y = ev.y;
-                            px_ws_set_mouse_locked(&engine_window_main, true);
+                            if (is_mouse_on_anchor(engine_anchor_scene_editor)) {
+								engine_mouse_locked = true;
+								engine_mouse_saved_x = ev.x;
+								engine_mouse_saved_y = ev.y;
+								px_ws_set_mouse_locked(&engine_window_main, true);
+							} else if (is_mouse_on_anchor(engine_anchor_scene_panel)) {
+								engine_scene_panel_context_menu.pos = (PX_Vector2){ev.x, ev.y};
+								engine_scene_panel_context_menu.visible = true;
+							}
                             break;
                         }
-                        default: break;
+                        
+						case EKeycode_MouseScrollUp:
+						case EKeycode_MouseScrollDown: {
+							if (editor_state->current_mode != PX_EDITOR_MODE_2D) break;
+							px_rs_update_scene_cam_2d((PX_Vector2){ev.x, ev.y}, ev.keycode);
+						}
+						default: break;
                     }
                     break;
                 case PX_WE_MOUSE_UP:
@@ -738,7 +827,13 @@ int main(int argc, char** argv) {
                             }
                             break;
                         }
-                        default: break;
+                        
+						case EKeycode_MouseScrollUp:
+						case EKeycode_MouseScrollDown: {
+							if (editor_state->current_mode != PX_EDITOR_MODE_2D) break;
+							px_rs_update_scene_cam_2d((PX_Vector2){ev.x, ev.y}, ev.keycode);
+						}
+						default: break;
                     }
                     break;
                 case PX_WE_KEYDOWN:
@@ -757,12 +852,20 @@ int main(int argc, char** argv) {
                                 engine_mouse_x >= engine_window_main_w / 4 &&
                                 engine_mouse_y >= engine_menu_dropdown.height
                             )) break;
-                            px_rs_config_scene_cam(-1.0f, engine_3drenderer_scene_cam_speed*2.0f);
-                            engine_3drenderer_scene_cam_speed_doubled = true;
+                            if (editor_state->current_mode == PX_EDITOR_MODE_3D) {
+								px_rs_config_scene_cam_3d(-1.0f, engine_3drenderer_scene_cam_speed*2.0f);
+								engine_3drenderer_scene_cam_speed_doubled = true;
+							} else if (editor_state->current_mode == PX_EDITOR_MODE_2D) {
+								px_rs_config_scene_cam_2d(engine_2drenderer_scene_cam_speed*2.0f);
+								engine_2drenderer_scene_cam_speed_doubled = true;
+							}
                             break;
                         }
                         default: {
-                            px_rs_update_scene_cam_3d((PX_Vector2){ev.x, ev.y}, ev.keycode);
+                            if (editor_state->current_mode == PX_EDITOR_MODE_3D)
+								px_rs_update_scene_cam_3d((PX_Vector2){ev.x, ev.y}, ev.keycode);
+							else if (editor_state->current_mode == PX_EDITOR_MODE_2D)
+								px_rs_update_scene_cam_2d((PX_Vector2){ev.x, ev.y}, ev.keycode);
                             break;
                         }
                     }
@@ -770,9 +873,13 @@ int main(int argc, char** argv) {
                 case PX_WE_KEYUP:
                     switch (ev.keycode) {
                         case EKeycode_LShift: {
-                            if (!engine_3drenderer_scene_cam_speed_doubled) break;
-                            px_rs_config_scene_cam(-1.0f, engine_3drenderer_scene_cam_speed);
-                            engine_3drenderer_scene_cam_speed_doubled = false;
+                            if (editor_state->current_mode == PX_EDITOR_MODE_3D && engine_3drenderer_scene_cam_speed_doubled) {
+								px_rs_config_scene_cam_3d(-1.0f, engine_3drenderer_scene_cam_speed);
+								engine_3drenderer_scene_cam_speed_doubled = false;
+							} else if (editor_state->current_mode == PX_EDITOR_MODE_2D && engine_2drenderer_scene_cam_speed_doubled) {
+								px_rs_config_scene_cam_2d(engine_2drenderer_scene_cam_speed);
+								engine_2drenderer_scene_cam_speed_doubled = false;
+							}
                             break;
                         }
                         default: break;

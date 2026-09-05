@@ -73,6 +73,8 @@ struct batch_2d {
     float text_pixel_height;
     float text_outline_width;
     PX_Color4 text_outline_color;
+
+	bool visible;
 };
 
 struct batch_3d {
@@ -100,6 +102,8 @@ struct batch_3d {
 
     PX_Transform3 transform;
     PX_Color4 color;
+
+	bool visible;
 };
 
 struct scene_cam_3d {
@@ -121,8 +125,32 @@ struct scene_cam_2d {
 	float move_speed;
 };
 
+struct batch_sys_3d {
+	struct vertex_3d* vertices;
+    size_t vertex_count;
+    size_t vertex_capacity;
+
+    uint32_t* indices;
+    size_t index_count;
+    size_t index_capacity;
+
+    struct batch_3d batches[MAX_BATCHES];
+    size_t batch_count;
+};
+
+struct batch_sys_2d {
+	struct vertex_2d* vertices;
+    size_t vertex_count;
+    size_t vertex_capacity;
+
+    struct batch_2d batches[MAX_BATCHES];
+    size_t batch_count;
+};
+
 extern struct scene_cam_3d gscene_cam_3d;
 extern struct scene_cam_2d gscene_cam_2d;
+extern struct batch_sys_2d* gr_batch_2d;
+extern struct batch_sys_3d* gr_batch_3d;
 
 void px_rs_internal_push_batch_3d(struct batch_3d* b);
 void px_rs_internal_push_batch_2d(struct batch_2d* b);

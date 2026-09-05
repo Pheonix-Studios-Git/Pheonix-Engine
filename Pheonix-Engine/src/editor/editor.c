@@ -77,7 +77,7 @@ PX_EditorState* editor_get_state(void) {
     return state;
 }
 
-static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 color, PX_Color4 Hcolor, PX_Font* font, float font_size, int xspacing, int yspacing, bool render_name, bool draw_vertical) {
+static int editor_render_object_3d(PX_AnchorRect lv, PX_Vector2 mpos, PX_3D_Object* object, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 color, PX_Color4 Hcolor, PX_Font* font, float font_size, int xspacing, int yspacing, bool render_name, bool draw_vertical) {
     if (!object) return transform.pos.y;
     PX_3D_Object* obj = object;
 
@@ -91,6 +91,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
 
     if (draw_vertical) {
         px_rs_draw_line(
+			lv,
             (PX_Vector2){branch_x, y - (yspacing / 2)},
             (PX_Vector2){branch_x, y + (yspacing / 2)},
             1.0f,
@@ -99,6 +100,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
     }
 
     px_rs_draw_line(
+		lv,
         (PX_Vector2){branch_x, y},
         (PX_Vector2){x + 4, y},
         1.0f,
@@ -122,6 +124,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
         px_rs_render_text(
             obj->name,
             font_size,
+			lv,
             box,
             Xcolor,
             font
@@ -148,6 +151,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
             };
 
             child_end_y = editor_render_object_3d(
+				lv,
                 mpos,
                 child,
                 child_transform,
@@ -166,6 +170,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
         }
 
         px_rs_draw_line(
+			lv,
             (PX_Vector2){branch_x, child_start_y},
             (PX_Vector2){branch_x, child_end_y - yspacing},
             2.0f,
@@ -178,7 +183,7 @@ static int editor_render_object_3d(PX_Vector2 mpos, PX_3D_Object* object, PX_Tra
     return current_y;
 }
 
-static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 color, PX_Color4 Hcolor, PX_Font* font, float font_size, int xspacing, int yspacing, bool render_name, bool draw_vertical) {
+static int editor_render_object_2d(PX_AnchorRect lv, PX_Vector2 mpos, PX_2D_Object* object, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 color, PX_Color4 Hcolor, PX_Font* font, float font_size, int xspacing, int yspacing, bool render_name, bool draw_vertical) {
     if (!object) return transform.pos.y;
     PX_2D_Object* obj = object;
 
@@ -192,6 +197,7 @@ static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Tra
 
     if (draw_vertical) {
         px_rs_draw_line(
+			lv,
             (PX_Vector2){branch_x, y - (yspacing / 2)},
             (PX_Vector2){branch_x, y + (yspacing / 2)},
             1.0f,
@@ -200,6 +206,7 @@ static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Tra
     }
 
     px_rs_draw_line(
+		lv,
         (PX_Vector2){branch_x, y},
         (PX_Vector2){x + 4, y},
         1.0f,
@@ -223,6 +230,7 @@ static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Tra
         px_rs_render_text(
             obj->name,
             font_size,
+			lv,
             box,
             Xcolor,
             font
@@ -249,6 +257,7 @@ static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Tra
             };
 
             child_end_y = editor_render_object_2d(
+				lv,
                 mpos,
                 child,
                 child_transform,
@@ -267,6 +276,7 @@ static int editor_render_object_2d(PX_Vector2 mpos, PX_2D_Object* object, PX_Tra
         }
 
         px_rs_draw_line(
+			lv,
             (PX_Vector2){branch_x, child_start_y},
             (PX_Vector2){branch_x, child_end_y - yspacing},
             2.0f,
@@ -425,8 +435,8 @@ static int editor_click_object_2d(PX_Scene_2D* scene, PX_Vector2 mpos, PX_2D_Obj
     return current_y;
 }
 
-void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing) {
-    px_rs_draw_panel(transform, color, noise, cradius);
+void editor_draw_scene_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing) {
+    px_rs_draw_panel(local_viewport, transform, color, noise, cradius, true);
 
     int x = transform.pos.x + 16;
     int y = transform.pos.y + 24;
@@ -440,6 +450,7 @@ void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4
 		case PX_EDITOR_MODE_3D: {
 			for (size_t i = 0; i < state->scene_3d->object_count; i++) {
 				y = editor_render_object_3d(
+					local_viewport,
 					mpos,
 					&state->scene_3d->objects[i],
 					tran,
@@ -464,6 +475,7 @@ void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4
 		case PX_EDITOR_MODE_2D: {
 			for (size_t i = 0; i < state->scene_2d->object_count; i++) {
 				y = editor_render_object_2d(
+					local_viewport,
 					mpos,
 					&state->scene_2d->objects[i],
 					tran,

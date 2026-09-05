@@ -30,5 +30,5 @@ typedef struct {
 
 t_err_codes editor_new_project(PX_Scene_3D* cScene3D, PX_Scene_2D* cScene2D, char* proj_name, PX_EditorMode base_mode);
 PX_EditorState* editor_get_state(void);
-void editor_draw_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
+void editor_draw_scene_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing);
 void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font* font, float font_size, int xspacing, int yspacing);

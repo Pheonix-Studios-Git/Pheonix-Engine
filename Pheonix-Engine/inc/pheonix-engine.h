@@ -13,3 +13,4 @@ extern PX_Window engine_window_main;
 
 void enginef_init_3drenderer_main_scene(void);
 void enginef_init_2drenderer_main_scene(void);
+PX_Transform2 enginef_convert_anchor_to_transform(PX_AnchorRect r);
