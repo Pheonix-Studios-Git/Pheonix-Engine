@@ -754,6 +754,8 @@ void px_rs_gl_shutdown(void) {
 }
 
 void px_rs_gl_frame_start(void) {
+	glClearColor(0x4, 0x4, 0x4, 0xFF);
+	glClear(GL_COLOR_BUFFER_BIT);
 }
 
 void px_rs_gl_2d_frame_end(void) {
@@ -1187,14 +1189,14 @@ void px_rs_gl_3d_resize(PX_AnchorRect viewport) {
 }
 
 void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
-    int local_x = mpos.x - gr_gl_3d->screen_x;
-	int local_y = mpos.y - gr_gl_3d->screen_y;
+    int64_t local_x = mpos.x - gr_gl_3d->screen_x;
+	int64_t local_y = mpos.y - gr_gl_3d->screen_y;
 
 	if (
 		local_x < 0 ||
 		local_y < 0 ||
-		local_x >= gr_gl_3d->screen_w ||
-		local_y >= gr_gl_3d->screen_h
+		local_x >= (int64_t)gr_gl_3d->screen_w ||
+		local_y >= (int64_t)gr_gl_3d->screen_h
 	) {
 		return;
 	}

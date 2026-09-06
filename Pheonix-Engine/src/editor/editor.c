@@ -436,7 +436,7 @@ static int editor_click_object_2d(PX_Scene_2D* scene, PX_Vector2 mpos, PX_2D_Obj
 }
 
 void editor_draw_scene_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing) {
-    px_rs_draw_panel(local_viewport, transform, color, noise, cradius, true);
+	px_rs_draw_panel(local_viewport, (PX_Transform2){.pos=(PX_Vector2){transform.pos.x,transform.pos.y+4}, .scale=transform.scale, .rot=transform.rot}, color, noise, cradius, true);
 
     int x = transform.pos.x + 16;
     int y = transform.pos.y + 24;

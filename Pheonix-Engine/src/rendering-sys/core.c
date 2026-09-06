@@ -119,59 +119,113 @@ static PX_Transform2 combine_transform2_as_container(PX_Transform2 parent, PX_Tr
     return out;
 }
 
-static PX_Vector2 transform_point_2d(PX_Vector2 point, PX_Transform2 transform) {
-    float x = (float)point.x * (float)transform.scale.w;
-    float y = (float)point.y * (float)transform.scale.h;
+static PX_Transform2 apply_camera_2d(PX_Transform2 transform, PX_Transform2 viewport) {
+	float center_x = viewport.pos.x + viewport.scale.w * 0.5f;
+	float center_y = viewport.pos.y + viewport.scale.h * 0.5f;
 
-    float c = cosf(transform.rot);
-    float s = sinf(transform.rot);
+	transform.pos.x = (transform.pos.x - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + center_x;
+	transform.pos.y = (transform.pos.y - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + center_y;
 
-    PX_Vector2 out;
+	transform.scale.w *= gscene_cam_2d.zoom;
+	transform.scale.h *= gscene_cam_2d.zoom;
 
-    out.x = transform.pos.x + x * c - y * s;
-    out.y = transform.pos.y + x * s + y * c;
-    return out;
+	return transform;
 }
 
-static PX_Transform2 apply_camera_2d(PX_Transform2 transform) {
-    transform.pos.x -= gscene_cam_2d.position[0];
-    transform.pos.y -= gscene_cam_2d.position[1];
+static bool is_transform_visible(PX_Transform2 transform, PX_Transform2 container) {
+    const float left = transform.pos.x;
+    const float right = transform.pos.x + transform.scale.w;
+    const float top = transform.pos.y;
+    const float bottom = transform.pos.y + transform.scale.h;
 
-    transform.pos.x *= gscene_cam_2d.zoom;
-    transform.pos.y *= gscene_cam_2d.zoom;
-
-    transform.scale.w *= gscene_cam_2d.zoom;
-    transform.scale.h *= gscene_cam_2d.zoom;
-    return transform;
-}
-
-static bool is_transform_visible(PX_Transform2 transform, PX_Transform2 container, float zoom) {
-    if (zoom <= 0.0f) return false;
-
-    float c_x = container.pos.x;
-    float c_y = container.pos.y;
-
-    float half_w = transform.scale.w * 0.5f;
-    float half_h = transform.scale.h * 0.5f;
-
-    float left = transform.pos.x - half_w;
-    float right = transform.pos.x + half_w;
-    float top = transform.pos.y - half_h;
-    float bottom = transform.pos.y + half_h;
-
-    float c_w = container.scale.w / zoom;
-    float c_h = container.scale.h / zoom;
-
-    float c_left = c_x;
-    float c_right = c_x + c_w;
-    float c_top = c_y;
-    float c_bottom = c_y + c_h;
+    const float c_left = container.pos.x;
+    const float c_right = container.pos.x + container.scale.w;
+    const float c_top = container.pos.y;
+    const float c_bottom = container.pos.y + container.scale.h;
 
     if (right < c_left) return false;
     if (left > c_right) return false;
     if (bottom < c_top) return false;
     if (top > c_bottom) return false;
 
+    return true;
+}
+
+static bool clip_transform_to_container(PX_Transform2* transform, PX_Transform2 container) {
+    if (!transform) return false;
+
+    const float left = transform->pos.x;
+    const float top = transform->pos.y;
+    const float right = transform->pos.x + transform->scale.w;
+    const float bottom = transform->pos.y + transform->scale.h;
+
+    const float c_left = container.pos.x;
+    const float c_top = container.pos.y;
+    const float c_right = container.pos.x + container.scale.w;
+    const float c_bottom = container.pos.y + container.scale.h;
+
+    const float clipped_left = fmaxf(left, c_left);
+    const float clipped_top = fmaxf(top, c_top);
+    const float clipped_right = fminf(right, c_right);
+    const float clipped_bottom = fminf(bottom, c_bottom);
+
+    if (clipped_left >= clipped_right || clipped_top >= clipped_bottom) return false;
+
+    transform->pos.x = clipped_left;
+    transform->pos.y = clipped_top;
+    transform->scale.w = clipped_right - clipped_left;
+    transform->scale.h = clipped_bottom - clipped_top;
+
+    return true;
+}
+
+static bool clip_line_to_container(PX_Vector2* start, PX_Vector2* end, PX_Transform2 container) {
+    if (!start || !end) return false;
+
+    const float left = container.pos.x;
+    const float top = container.pos.y;
+    const float right = container.pos.x + container.scale.w;
+    const float bottom = container.pos.y + container.scale.h;
+
+    float x0 = start->x;
+    float y0 = start->y;
+    float x1 = end->x;
+    float y1 = end->y;
+
+    float dx = x1 - x0;
+    float dy = y1 - y0;
+
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+
+    #define CLIP_LINE(p, q) if ((p) == 0.0f) { \
+		if ((q) < 0.0f) \
+			return false; \
+	} else { \
+		float r = (q) / (p); \
+		if ((p) < 0.0f) { \
+			if (r > t1) return false; \
+			if (r > t0) t0 = r; \
+		} else { \
+			if (r < t0) return false; \
+			if (r < t1) t1 = r; \
+		} \
+	}
+
+    CLIP_LINE(-dx, x0 - left);
+    CLIP_LINE( dx, right - x0);
+    CLIP_LINE(-dy, y0 - top);
+    CLIP_LINE( dy, bottom - y0);
+
+    #undef CLIP_LINE
+
+    if (t1 < t0) return false;
+
+    start->x = x0 + t0 * dx;
+    start->y = y0 + t0 * dy;
+
+    end->x = x0 + t1 * dx;
+    end->y = y0 + t1 * dy;
     return true;
 }
 
@@ -301,17 +355,18 @@ static void push_2d_quad(PX_Transform2 container, PX_Transform2 t, PX_Color4 c, 
     b->type = BATCH_2D_PANEL;
 	b->visible = true;
 
-	PX_Transform2 transform = fixed_on_screen ? t : apply_camera_2d(t);
-	if (!is_transform_visible(transform, container, fixed_on_screen ? 1.0f : gscene_cam_2d.zoom)) {
+	PX_Transform2 transform = fixed_on_screen ? t : apply_camera_2d(t, container);
+	if (!clip_transform_to_container(&transform, container)) {
+		b->visible = false;
+		return;
+	}
+	if (!is_transform_visible(transform, container)) {
 		b->visible = false;
 		return;
 	}
 
 	b->vertex_offset = gr_batch_2d->vertex_count;
     b->vertex_count = 4;
-
-	float pos_x = transform.pos.x;
-    float pos_y = transform.pos.y;
 
     float c_rot = cosf(transform.rot);
     float s_rot = sinf(transform.rot);
@@ -320,16 +375,16 @@ static void push_2d_quad(PX_Transform2 container, PX_Transform2 t, PX_Color4 c, 
     const float cy = transform.scale.h * 0.5f;
 
     float corners[4][2] = {
-        {0.0f, 0.0f},
-        {transform.scale.w, 0.0f},
-        {transform.scale.w, transform.scale.h},
-        {0.0f, transform.scale.h}
-    };
+		{-cx, -cy},
+		{ cx, -cy},
+		{ cx,  cy},
+		{-cx,  cy}
+	};
 
     struct vertex_2d* v = gr_batch_2d->vertices + gr_batch_2d->vertex_count;
     for (int i = 0; i < 4; ++i) {
-        float x = corners[i][0] - cx;
-        float y = corners[i][1] - cy;
+        float x = corners[i][0];
+        float y = corners[i][1];
 
         float rx = x * c_rot - y * s_rot;
         float ry = x * s_rot + y * c_rot;
@@ -372,7 +427,6 @@ static void push_2d_line(PX_Color4 color, PX_Vector2 startpos, PX_Vector2 endpos
 	b->visible = true;
 	b->line_width = width;
 	b->vertex_offset = gr_batch_2d->vertex_count;
-    uint32_t base = (uint32_t)gr_batch_2d->vertex_count;
 
     struct vertex_2d v0 = {
         .x = startpos.x,
@@ -402,17 +456,23 @@ static void push_2d_line(PX_Color4 color, PX_Vector2 startpos, PX_Vector2 endpos
     b->vertex_count = gr_batch_2d->vertex_count - b->vertex_offset;
 }
 
-static void push_2d_grid(PX_EditorGrid_2D* grid, PX_Transform2 container, PX_Transform2 t, struct batch_2d* b, bool fixed_on_screen) {
+static void push_2d_grid(PX_EditorGrid_2D* grid, PX_Transform2 container, struct batch_2d* b) {
     if (!grid || !b) return;
     memset(b, 0, sizeof(struct batch_2d));
 
     b->type = BATCH_2D_LINE;
 	b->visible = true;
 	
-	PX_Transform2 transform = fixed_on_screen ? t : apply_camera_2d(t);
-	
 	b->line_width = 1.0f;
     b->vertex_offset = gr_batch_2d->vertex_count;
+
+	const float container_center_x = container.pos.x + container.scale.w * 0.5f;
+	const float container_center_y = container.pos.y + container.scale.h * 0.5f;
+
+	const float container_left = container.pos.x;
+	const float container_top = container.pos.y;
+	const float container_right = container.pos.x + container.scale.w;
+	const float container_bottom = container.pos.y + container.scale.h;
 
     const float spacing = grid->spacing;
 
@@ -423,79 +483,69 @@ static void push_2d_grid(PX_EditorGrid_2D* grid, PX_Transform2 container, PX_Tra
     float cam_x = floorf(gscene_cam_2d.position[0] / spacing) * spacing;
     float cam_y = floorf(gscene_cam_2d.position[1] / spacing) * spacing;
 
-    float extent = half_view * spacing;
-
     for (float i = -half_view; i <= half_view; i++) {
         if (gr_batch_2d->vertex_count + 4 >= gr_batch_2d->vertex_capacity) break;
 
         float p = i * spacing;
+		float world_x = cam_x + p;
+		float world_y = cam_y + p;
+		float screen_x = (world_x - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + container_center_x;
+		float screen_y = (world_y - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + container_center_y;
 
-		PX_Vector2 v0_pos = {
-			.x = ((cam_x + p) - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + container.pos.x,
-			.y = ((cam_y - extent) - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + container.pos.y
-		};
-		PX_Vector2 v1_pos = {
-			.x = ((cam_x + p) - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + container.pos.x,
-			.y = ((cam_y + extent) - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + container.pos.y
-		};
-		PX_Vector2 v2_pos = {
-			.x = ((cam_x - extent) - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + container.pos.x,
-			.y = ((cam_y + p) - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + container.pos.y
-		};
-		PX_Vector2 v3_pos = {
-			.x = ((cam_x + extent) - gscene_cam_2d.position[0]) * gscene_cam_2d.zoom + container.pos.x,
-			.y = ((cam_y + p) - gscene_cam_2d.position[1]) * gscene_cam_2d.zoom + container.pos.y
-		};
+		if (screen_x >= container_left && screen_x <= container_right) {
+			struct vertex_2d v0 = {
+				.x = screen_x,
+				.y = container_top,
+				.u = 0.0f,
+				.v = 0.0f,
+				.r = grid->color.r,
+				.g = grid->color.g,
+				.b = grid->color.b,
+				.a = grid->color.a
+			};
 
-        struct vertex_2d v0 = {
-            .x = v0_pos.x,
-            .y = v0_pos.y,
-            .u = 0.0f,
-            .v = 0.0f,
-            .r = grid->color.r,
-            .g = grid->color.g,
-            .b = grid->color.b,
-            .a = grid->color.a
-        };
+			struct vertex_2d v1 = {
+				.x = screen_x,
+				.y = container_bottom,
+				.u = 0.0f,
+				.v = 0.0f,
+				.r = grid->color.r,
+				.g = grid->color.g,
+				.b = grid->color.b,
+				.a = grid->color.a
+			};
 
-        struct vertex_2d v1 = {
-            .x = v1_pos.x,
-            .y = v1_pos.y,
-            .u = 0.0f,
-            .v = 0.0f,
-            .r = grid->color.r,
-            .g = grid->color.g,
-            .b = grid->color.b,
-            .a = grid->color.a
-        };
+			gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v0;
+			gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v1;
+		}
 
-        struct vertex_2d v2 = {
-            .x = v2_pos.x,
-            .y = v2_pos.y,
-            .u = 0.0f,
-            .v = 0.0f,
-            .r = grid->color.r,
-            .g = grid->color.g,
-            .b = grid->color.b,
-            .a = grid->color.a
-        };
+		if (screen_y >= container_top && screen_y <= container_bottom) {
+			struct vertex_2d v2 = {
+				.x = container_left,
+				.y = screen_y,
+				.u = 0.0f,
+				.v = 0.0f,
+				.r = grid->color.r,
+				.g = grid->color.g,
+				.b = grid->color.b,
+				.a = grid->color.a
+			};
 
-        struct vertex_2d v3 = {
-            .x = v3_pos.x,
-            .y = v3_pos.y,
-            .u = 0.0f,
-            .v = 0.0f,
-            .r = grid->color.r,
-            .g = grid->color.g,
-            .b = grid->color.b,
-            .a = grid->color.a
-        };
+			struct vertex_2d v3 = {
+				.x = container_right,
+				.y = screen_y,
+				.u = 0.0f,
+				.v = 0.0f,
+				.r = grid->color.r,
+				.g = grid->color.g,
+				.b = grid->color.b,
+				.a = grid->color.a
+			};
 
-        gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v0;
-        gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v1;
-        gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v2;
-        gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v3;
-    }
+			gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v2;
+			gr_batch_2d->vertices[gr_batch_2d->vertex_count++] = v3;
+		}
+	}
 
     b->vertex_count = gr_batch_2d->vertex_count - b->vertex_offset;
 }
@@ -878,7 +928,7 @@ t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 tran, P
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRect local_viewport, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
 	if (!text) return ERR_INVALID_ARGUMENTS;
 	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
-	PX_Vector2 fpos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=pos, .scale=(PX_Scale2){1}, .rot=0})).pos;
+	PX_Vector2 fpos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=pos, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
 
     int start_vertex = gr_batch_2d->vertex_count;
     float scale = pixel_height / (px_sdf_ascent(font) - px_sdf_descent(font));
@@ -934,8 +984,8 @@ t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_V
 	if (thickness < 1.0f) return ERR_INVALID_ARGUMENTS;
 
 	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
-	PX_Vector2 fspos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=start, .scale=(PX_Scale2){1}, .rot=0})).pos;
-	PX_Vector2 fepos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=end, .scale=(PX_Scale2){1}, .rot=0})).pos;
+	PX_Vector2 fspos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=start, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
+	PX_Vector2 fepos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=end, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
 
 	struct batch_2d b = {0};
     push_2d_line(color, fspos, fepos, thickness, &b);
@@ -954,43 +1004,103 @@ t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_V
     return ERR_SUCCESS;
 }
 
+static t_err_codes px_rs_draw_dropdown_node(PX_AnchorRect local_viewport, PX_DropdownNode* node, PX_Transform2 menu_transform, PX_Vector2 text_start_off, PX_Dropdown* dd, bool vertical) {
+	if (!node || !dd) return ERR_SUCCESS;
+	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
+	PX_DropdownNode* cnode = node;
+	
+	PX_Transform2 node_txt_transform = combine_transform2_as_container(menu_transform, (PX_Transform2){.pos=text_start_off, .scale=node->scale, .rot=node->rot});
+	while (cnode) {
+		// Draw Node
+		cnode->rendered_transform = (PX_Transform2){
+			.pos=node_txt_transform.pos,
+			.scale=cnode->scale,
+			.rot=cnode->rot
+		};
+
+		if (cnode->label) {
+			PX_Color4 text_color = cnode->hovered ? dd->text_hover_color : dd->text_color;
+			px_rs_render_text(cnode->label, dd->font_size, local_viewport, node_txt_transform.pos, text_color, dd->font);
+
+			if (vertical) node_txt_transform.pos.y += cnode->scale.h + dd->node_spacing;
+			else node_txt_transform.pos.x += cnode->scale.w + dd->node_spacing;
+		}
+
+		if (cnode->children && cnode->children_count > 0 && cnode->open) {
+			// Calculate Submenu Position and Scale and other stuff
+			PX_Transform2 submenu_t = (PX_Transform2){.rot=cnode->rot};
+			
+			// Get Final Scale
+			submenu_t.scale.w = text_start_off.x;
+			submenu_t.scale.h = text_start_off.y;
+
+			for (size_t cidx = 0; cidx < cnode->children_count; cidx++) {
+				PX_DropdownNode* child = cnode->children[cidx];
+
+				if (cnode->label) {
+					submenu_t.scale.w += child->scale.w;
+					submenu_t.scale.h += child->scale.h;
+
+					if (cidx + 1 < cnode->children_count) {
+						if (cnode->vertical) submenu_t.scale.h += dd->node_spacing;
+						else submenu_t.scale.w += dd->node_spacing;
+					}
+				}
+			}
+			
+			// Calculate Position
+			if (vertical) {
+				submenu_t.pos.x = cnode->rendered_transform.pos.x + menu_transform.scale.w;
+				submenu_t.pos.y = cnode->rendered_transform.pos.y;
+			} else {
+				submenu_t.pos.x = cnode->rendered_transform.pos.x;
+				submenu_t.pos.y = cnode->rendered_transform.pos.y + menu_transform.scale.h;
+			}
+
+			// Right edge
+			if (submenu_t.pos.x + submenu_t.scale.w > lvt.pos.x + lvt.scale.w) {
+				// Try opening to the opposite side.
+				if (cnode->vertical) {
+					submenu_t.pos.x = cnode->rendered_transform.pos.x - submenu_t.scale.w;
+				}
+			}
+
+			// Bottom edge
+			if (submenu_t.pos.y + submenu_t.scale.h > lvt.pos.y + lvt.scale.h) {
+				// Try opening upward.
+				if (!cnode->vertical) {
+					submenu_t.pos.y = cnode->rendered_transform.pos.y - submenu_t.scale.h;
+				}
+			}
+
+			// Clamp
+			if (submenu_t.pos.x < lvt.pos.x) submenu_t.pos.x = lvt.pos.x;
+			if (submenu_t.pos.y < lvt.pos.y) submenu_t.pos.y = lvt.pos.y;
+			if (submenu_t.pos.x + submenu_t.scale.w > lvt.pos.x + lvt.scale.w) submenu_t.pos.x = lvt.pos.x + lvt.scale.w - submenu_t.scale.w;
+			if (submenu_t.pos.y + submenu_t.scale.h > lvt.pos.y + lvt.scale.h) submenu_t.pos.y = lvt.pos.y + lvt.scale.h - submenu_t.scale.h;
+			
+			px_rs_draw_panel(local_viewport, submenu_t, dd->subpanel_color, dd->noise, dd->cradius, dd->screen_pos_fixed);
+			t_err_codes err = px_rs_draw_dropdown_node(local_viewport, cnode->children[0], submenu_t, text_start_off, dd, cnode->vertical);
+			if (err != ERR_SUCCESS) return err;
+		}
+
+		if (!cnode->next) break;
+		cnode = cnode->next;
+	}
+
+	return ERR_SUCCESS;
+}
+
 t_err_codes px_rs_draw_dropdown(PX_AnchorRect local_viewport, PX_Dropdown* dd) {
 	if (!dd) return ERR_INVALID_ARGUMENTS;
 	if (!dd->visible) return ERR_SUCCESS;
 
-	PX_Transform2 ddt = (PX_Transform2){.pos = dd->pos, .scale = {dd->width, dd->height}, .rot = 0.0f};
+	// Main Dropdown Panel
+	if (!dd->root) return ERR_SUCCESS;
+	if (dd->root->children_count < 1 || !dd->root->children) return ERR_SUCCESS;
 
-    PX_Color4 color = dd->color; 
-    px_rs_draw_panel(local_viewport, ddt, color, dd->noise, dd->cradius, true);
-
-    PX_Vector2 item_pos = dd->stext_pos;
-    for (int i = 0; i < dd->item_count; i++) {
-        PX_DropdownItem* item = &dd->items[i];
-		PX_Vector2 absolute_item_pos = {dd->pos.x + item_pos.x, dd->pos.y + item_pos.y};
-        PX_Color4 tcolor = dd->hover_index == i ? dd->hover_color : dd->text_color;
-
-        px_rs_render_text(item->label, dd->font_size, local_viewport, (PX_Vector2){absolute_item_pos.x + item->stext_pos.x, absolute_item_pos.y + item->stext_pos.y}, tcolor, dd->font);
-        if (item->is_open) {
-			PX_Transform2 item_transform = {.pos = absolute_item_pos, .scale = {item->width, item->height}, .rot = 0.0f};
-            PX_Transform2 option_panel_transform = combine_transform2_as_container(item_transform, item->panel_tran);
-
-			px_rs_draw_panel(local_viewport, option_panel_transform, item->panel_color, item->panel_noise, item->panel_cradius, true);
-
-            PX_Vector2 option_pos = item->stext_pos;
-            for (int j = 0; j < item->option_count; j++) {
-                PX_DropdownOption* option = &item->options[j];
-
-                PX_Color4 ptcolor = item->hover_index == j ? item->hover_color : item->text_color;
-                px_rs_render_text(option->label, item->font_size, local_viewport, (PX_Vector2){option_panel_transform.pos.x + option_pos.x, option_panel_transform.pos.y + option_pos.y}, ptcolor, dd->font);
-
-                option_pos.y += item->spacing;
-            }
-        }
-
-		item_pos.x += item->width + dd->spacing;
-    }
-
-    return ERR_SUCCESS;
+	px_rs_draw_panel(local_viewport, dd->transform, dd->panel_color, dd->noise, dd->cradius, dd->screen_pos_fixed);
+    return px_rs_draw_dropdown_node(local_viewport, dd->root->children[0], dd->transform, dd->text_start_offset, dd, dd->root->vertical);
 }
 
 t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
@@ -1104,39 +1214,51 @@ t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_
         if (!obj->active) continue;
         PX_Transform2 localT = obj->local_transform;
         PX_Transform2 worldT = obj->world_transform;
-        PX_Transform2 finalT = combine_transform2_as_container(lvt, combine_transform2(worldT, localT));
+        PX_Transform2 finalT = combine_transform2(worldT, localT);
 
         switch (obj->type){
             case PX_RS_OBJECT_2D_EDITOR_GRID: {
                 if (!obj->ex_data) continue;
-                push_2d_grid(obj->ex_data, lvt, worldT, &batch, false);
+                push_2d_grid(obj->ex_data, lvt, &batch);
 				push_2d_batch(&batch);
                 break;
             }
             case PX_RS_OBJECT_2D_EDITOR_GIZMO: {
 				if (!obj->ex_data) continue;
 
-                PX_Vector2 GXep = (PX_Vector2){finalT.pos.x + 5, finalT.pos.y};
-                PX_Vector2 GYep = (PX_Vector2){finalT.pos.x, finalT.pos.y + 5};
-                if (obj->ex_data && *(bool*)obj->ex_data)
-                    push_2d_line((PX_Color4){0x75,0x0,0x0,0xFF}, finalT.pos, GXep, 4.0f, &batch);
+				PX_Transform2 gizmoT_true= apply_camera_2d(finalT, lvt);
+				PX_Transform2 gizmoT = gizmoT_true;
+                PX_Vector2 GXep = (PX_Vector2){gizmoT.pos.x + 50, gizmoT.pos.y};
+
+				if (!clip_line_to_container(&gizmoT.pos, &GXep, lvt)) continue;
+				if (!is_transform_visible(gizmoT, lvt)) continue;
+				
+				if (obj->ex_data && *(bool*)obj->ex_data)
+                    push_2d_line((PX_Color4){0x75,0x0,0x0,0xFF}, gizmoT.pos, GXep, 4.0f, &batch);
                 else
-                    push_2d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, finalT.pos, GXep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, gizmoT.pos, GXep, 4.0f, &batch);
                 
                 push_2d_batch(&batch);
+
+				gizmoT = gizmoT_true;
+				PX_Vector2 GYep = (PX_Vector2){gizmoT.pos.x, gizmoT.pos.y - 50}; // Upwards
+
+				if (!clip_line_to_container(&gizmoT.pos, &GYep, lvt)) continue;
+				if (!is_transform_visible(gizmoT, lvt)) continue;
+
                 if (obj->ex_data && *(bool*)obj->ex_data)
-                    push_2d_line((PX_Color4){0x0,0x75,0x0,0xFF}, finalT.pos, GYep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0x0,0x75,0x0,0xFF}, gizmoT.pos, GYep, 4.0f, &batch);
                 else
-                    push_2d_line((PX_Color4){0x0,0xFF,0x0,0xFF}, finalT.pos, GYep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0x0,0xFF,0x0,0xFF}, gizmoT.pos, GYep, 4.0f, &batch);
                 
                 push_2d_batch(&batch);
                 
                 // Picker
-                PX_Color3 main_color = {
-                    .r = 0xFF, //obj->id & 0xFF,
-                    .g = (obj->id >> 8) & 0xFF,
-                    .b = obj->type
-                };
+                // PX_Color3 main_color = {
+                //     .r = 0xFF, //obj->id & 0xFF,
+                //     .g = (obj->id >> 8) & 0xFF,
+                //     .b = obj->type
+                // };
 				break;
             }
             default: continue;
@@ -1201,7 +1323,7 @@ t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene
         if (!obj->active) continue;
         PX_Transform2 localT = obj->local_transform;
         PX_Transform2 worldT = obj->world_transform;
-        PX_Transform2 finalT = combine_transform2_as_container(lvt, combine_transform2(worldT, localT));
+        PX_Transform2 finalT = combine_transform2(worldT, localT);
 
         struct batch_2d batch = {0};
         batch.switch_fbo = false;

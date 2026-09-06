@@ -16,43 +16,6 @@ static PX_Vector2 mouse_pos = {0};
 static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
 static int gsignals_count = 0;
 
-static PX_Transform2 combine_transform2(PX_Transform2 parent, PX_Transform2 local) {
-    PX_Transform2 out = {0};
-
-    out.scale.w = local.scale.w;
-    out.scale.h = local.scale.h;
-	out.rot = parent.rot + local.rot;
-
-	float c = cosf(parent.rot);
-    float s = sinf(parent.rot);
-
-	float rotated_x = local.pos.x * c - local.pos.y * s;
-    float rotated_y = local.pos.x * s + local.pos.y * c;
-
-    out.pos.x = parent.pos.x + rotated_x;
-    out.pos.y = parent.pos.y + rotated_y;
-    return out;
-}
-
-static PX_Transform2 dropdown_transform(PX_Dropdown* dd) {
-    return (PX_Transform2){dd->pos, (PX_Scale2){dd->width, dd->height}, 0.0f};
-}
-
-static PX_Transform2 dropdown_item_transform(PX_Dropdown* dd, PX_DropdownItem* item, int x) {
-    PX_Transform2 dd_tran = dropdown_transform(dd);
-    PX_Transform2 item_tran = {(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height }, 0.0f};
-    return combine_transform2(dd_tran, item_tran);
-}
-
-static PX_Transform2 dropdown_panel_transform(PX_Dropdown* dd, PX_DropdownItem* item, int x) {
-    PX_Transform2 dd_tran = dropdown_transform(dd);
-
-    PX_Transform2 item_tran = {(PX_Vector2){x, dd->stext_pos.y}, (PX_Scale2){item->width, item->height}, 0.0f};
-    PX_Transform2 panel_tran = combine_transform2(item_tran, item->panel_tran);
-
-    return combine_transform2(dd_tran, panel_tran);
-}
-
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
     mwindow_s = main_window_scale;
     mouse_pos = mouse_position;
@@ -90,131 +53,115 @@ bool is_mouse_on_anchor(PX_AnchorRect anchor) {
     );
 }
 
-void event_hover_dropdown(PX_Dropdown* dd) {
-    int open_index = -1;
-    for (int i = 0; i < dd->item_count; i++) {
-        (&dd->items[i])->hover_index = -1;
-        if ((&dd->items[i])->is_open) {
-            open_index = i;
-        }
-    }
-	dd->hover_index = -1;
+static void event_dropdown_close_children(PX_DropdownNode* node) {
+	if (!node || !node->children) return;
 
-    PX_Transform2 dd_tran = dropdown_transform(dd);
-    bool mouse_on_dropdown = is_mouse_on(dd_tran);
-    if (!mouse_on_dropdown && open_index == -1) return;
+	for (size_t i = 0; i < node->children_count; i++) {
+		PX_DropdownNode* child = node->children[i];
+		if (!child) continue;
 
-    if (mouse_on_dropdown) {
-        // It is on dropdown
-        int x = dd->stext_pos.x;
-        for (int i = 0; i < dd->item_count; i++) {
-            PX_DropdownItem* item = &dd->items[i];
+		child->open = false;
+		child->hovered = false;
 
-            PX_Transform2 tran = dropdown_item_transform(dd, item, x);
-            if (is_mouse_on(tran)) {
-                dd->hover_index = i;
-                return;
-            }
+		event_dropdown_close_children(child);
+	}
+}
 
-            x += item->width + dd->spacing;
-        }
-    } else {
-        // It is on a panel
-        PX_DropdownItem* item = &dd->items[open_index];
+static void event_dropdown_close_siblings(PX_DropdownNode* node) {
+	if (!node || !node->parent) return;
+	PX_DropdownNode* parent = node->parent;
+	if (!parent->children) return;
 
-		int x = dd->stext_pos.x;
-		for (int i = 0; i < open_index; i++) {
-			x += dd->items[i].width + dd->spacing;
-		}
+	for (size_t i = 0; i < parent->children_count; i++) {
+		PX_DropdownNode* sibling = parent->children[i];
+		if (!sibling || sibling == node) continue;
 
-		PX_Transform2 panel_tran = dropdown_panel_transform(dd, item, x);
-		int y = item->stext_pos.y;
+		sibling->open = false;
+		sibling->hovered = false;
 
-		for (int i = 0; i < item->option_count; i++) {
-			PX_DropdownOption* option = &item->options[i];
-			PX_Transform2 option_tran = {
-				(PX_Vector2){panel_tran.pos.x + item->stext_pos.x, panel_tran.pos.y + y},
-				(PX_Scale2){option->width, option->height},
-				0.0f
-			};
+		event_dropdown_close_children(sibling);
+	}
+}
 
-			if (is_mouse_on(option_tran)) {
-				item->hover_index = i;
-				return;
+static PX_DropdownNode* event_dropdown_find_hovered(PX_DropdownNode* node) {
+	if (!node || !node->children) return NULL;
+
+	for (size_t i = 0; i < node->children_count; i++) {
+		PX_DropdownNode* child = node->children[i];
+		if (!child) continue;
+
+		if (is_mouse_on(child->rendered_transform)) {
+			if (child->open && child->children && child->children_count > 0) {
+				PX_DropdownNode* hovered = event_dropdown_find_hovered(child);
+				if (hovered) return hovered;
 			}
-
-			y += item->spacing;
+			return child;
 		}
-    }
+
+		if (child->open && child->children && child->children_count > 0) {
+			PX_DropdownNode* hovered = event_dropdown_find_hovered(child);
+			if (hovered) return hovered;
+		}
+	}
+
+	return NULL;
+}
+
+static void event_dropdown_clear_hover_node(PX_DropdownNode* node) {
+	if (!node) return;
+	node->hovered = false;
+
+	if (!node->children) return;
+	for (size_t i = 0; i < node->children_count; i++) event_dropdown_clear_hover_node(node->children[i]);
+}
+
+void event_hover_dropdown(PX_Dropdown* dd) {
+	if (!dd) return;
+	if (!dd->visible || !dd->root) return;
+	if (!dd->root->children || dd->root->children_count == 0) return;
+
+	event_dropdown_clear_hover_node(dd->root);
+	PX_DropdownNode* hovered = event_dropdown_find_hovered(dd->root);
+	if (!hovered) return;
+	hovered->hovered = true;
 }
 
 void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too) {
-    int open_index = -1;
-    for (int i = 0; i < dd->item_count; i++) {
-        if ((&dd->items[i])->is_open) {
-            open_index = i;
-            break;
-        }
-    }
+	if (!dd) return;
+	if (!dd->visible || !dd->root) return;
+	if (!dd->root->children || dd->root->children_count == 0) return;
 
-    if (open_index > -1) {
-		PX_DropdownItem* item = &dd->items[open_index];
-		int x = dd->stext_pos.x;
-		for (int i = 0; i < open_index; i++) {
-			x += dd->items[i].width + dd->spacing;
-		}
-
-		PX_Transform2 panel_tran = dropdown_panel_transform(dd, item, x);
-		int y = item->stext_pos.y;
-
-		for (int i = 0; i < item->option_count; i++) {
-			PX_DropdownOption* option = &item->options[i];
-			PX_Transform2 option_tran = {
-				(PX_Vector2){panel_tran.pos.x + item->stext_pos.x, panel_tran.pos.y + y},
-				(PX_Scale2){option->width, option->height},
-				0.0f
-			};
-
-			if (is_mouse_on(option_tran)) {
-				PX_Event_GSignal signal = {0};
-                signal.type = EVENT_GSIGNAL_UI_DROPDOWN_CLICK;
-                signal.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){dd, open_index, i};
-                event_send_gsignal(&signal);
-                item->is_open = false;
-				return;
-			}
-
-			y += item->spacing;
-		}
-    }
-
-	PX_Transform2 dd_tran = dropdown_transform(dd);
-    bool mouse_on_dropdown = is_mouse_on(dd_tran);
-    if (!mouse_on_dropdown && open_index == -1) {
+	PX_DropdownNode* node = event_dropdown_find_hovered(dd->root);
+	if (!node) {
 		if (close_main_panel_too) dd->visible = false;
 		return;
 	}
 
-    if (mouse_on_dropdown) {
-        // It is on dropdown
-        int x = dd->stext_pos.x;
-        for (int i = 0; i < dd->item_count; i++) {
-            PX_DropdownItem* item = &dd->items[i];
-            PX_Transform2 tran = dropdown_item_transform(dd, item, x);
+	if (node->children && node->children_count > 0) {
+		if (node->open) {
+			node->open = false;
+			event_dropdown_close_children(node);
+		} else {
+			event_dropdown_close_siblings(node);
+			node->open = true;
+		}
+		return;
+	}
+	if (node->on_select) node->on_select(node, node->user_data);
+	else {
+		// Incase silent event is not used, send global wide event
+		PX_Event_GSignal gsignal = {
+			.type = EVENT_GSIGNAL_UI_DROPDOWN_CLICK,
+			.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){
+				.dropdown = dd,
+				.clicked_node = node
+			}
+		};
+		event_send_gsignal(&gsignal);
+	}
 
-            if (is_mouse_on(tran) && open_index != i) {
-                item->is_open = true;
-                (&dd->items[open_index])->is_open = false;
-                open_index = -1;
-            } else {
-                item->is_open = false;
-            }
-
-            x += dd->spacing + item->width;
-        }
-    }
-
-    if (open_index > -1) (&dd->items[open_index])->is_open = false;
+	event_dropdown_close_children(dd->root);
+	if (close_main_panel_too) dd->visible = false;
 }
 
 void event_send_gsignal(PX_Event_GSignal* signal) {
@@ -256,6 +203,8 @@ void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_le
 
             if (strcmp(iden, "menubar") == 0) {
                 menu_evs_handle_events(s);
+            } else if (strcmp(iden, "scene-panel-context-menu") == 0) {
+                scene_context_panel_evs_handle_events(s);
             }
             break;
         case EVENT_GSIGNAL_CORE_QUIT:

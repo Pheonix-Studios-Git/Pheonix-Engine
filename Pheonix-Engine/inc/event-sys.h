@@ -15,8 +15,7 @@ typedef enum {
 
 typedef struct {
     PX_Dropdown* dropdown;
-    int opened_index;
-    int clicked_option;
+    PX_DropdownNode* clicked_node;
 } PX_Event_GSignal_UIDropdownClick;
 
 typedef struct {
@@ -50,6 +49,7 @@ typedef struct {
 
 // Include subsystems
 #include <event-sys/menu-events.h>
+#include <event-sys/scene_context_panel_events.h>
 
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position);
 void event_resize(PX_Scale2 main_window_scale);

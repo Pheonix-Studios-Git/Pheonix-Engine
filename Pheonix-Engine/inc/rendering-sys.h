@@ -67,59 +67,49 @@ typedef struct {
 	float rot;
 } PX_Transform2;
 
-typedef struct {
-    char* label;
-    int width;
-    int height;
-} PX_DropdownOption;
+typedef struct PX_DropdownNode {
+	const char* label;
+	size_t identifier;
+
+	void (*on_select)(struct PX_DropdownNode* node, void* user_data);
+	void* user_data;
+
+	struct PX_DropdownNode* parent;
+	struct PX_DropdownNode* next;
+	struct PX_DropdownNode** children;
+	size_t children_count;
+
+	bool open;
+	bool hovered;
+	bool vertical;
+
+	PX_Scale2 scale;
+	float rot;
+
+	PX_Transform2 rendered_transform;
+} PX_DropdownNode;
 
 typedef struct {
-    char* label;
-    int width;
-    int height;
-    int spacing;
+	PX_Transform2 transform;
+	PX_Vector2 text_start_offset;
+	float node_spacing;
 
-    PX_DropdownOption options[PX_RS_MAX_DROPDOWN_OPTIONS];
-    int option_count;
+	struct PX_Font* font;
+	float font_size;
 
-    bool is_open;
-    
-    PX_Transform2 panel_tran;
-    PX_Vector2 stext_pos;
-    
-    float font_size;
+	PX_Color4 panel_color;
+	PX_Color4 subpanel_color;
+	PX_Color4 text_hover_color;
+	PX_Color4 text_color;
 
-    PX_Color4 text_color;
-    PX_Color4 panel_color;
-    PX_Color4 hover_color;
+	float noise;
+	float cradius;
 
-    float panel_noise;
-    float panel_cradius;
+	PX_DropdownNode* root;
 
-    int hover_index;
-} PX_DropdownItem;
-
-typedef struct {
-    PX_Vector2 pos;
-    PX_Vector2 stext_pos;
-    int spacing;
-    int width, height;
-    
-    PX_Color4 color;
-    PX_Color4 hover_color;
-    PX_Color4 text_color;
-    
-    struct PX_Font* font;
-    float font_size;
-    
-    float noise;
-    float cradius;
-
-    PX_DropdownItem items[PX_RS_MAX_DROPDOWN_ITEMS];
-    int item_count;
-
-    int hover_index;
+	int64_t hover_index;
 	bool visible;
+	bool screen_pos_fixed;
 } PX_Dropdown;
 
 typedef enum {
@@ -180,7 +170,7 @@ typedef struct PX_2D_Object {
 
 	bool screen_pos_fixed;
 
-    void* ex_data; // for sprites, its batch_2d struct
+    void* ex_data;
     PX_2D_Object_Type ex_data_type;
 } PX_2D_Object;
 
