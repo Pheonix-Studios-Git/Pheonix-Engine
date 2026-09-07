@@ -192,7 +192,7 @@ static int append_window(struct window* win) {
 
     if (g_windows) {
         struct winarray* nxt = g_windows;
-        for (int i = 0; i < MAX_WINDOWS; i++) {
+        for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
             if (nxt->next)
                 nxt = nxt->next;
             else 
@@ -216,7 +216,7 @@ static struct window* get_window(int handle) {
         return NULL;
 
     struct winarray* nxt = g_windows;
-    for (int i = 0; i < MAX_WINDOWS; i++) {
+    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->handle == handle)
             return nxt->win;
         if (nxt->next)
@@ -234,7 +234,7 @@ static void remove_window(int handle) {
 
     struct winarray* nxt = g_windows;
     bool found = false;
-    for (int i = 0; i < MAX_WINDOWS; i++) {
+    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->handle == handle) {
             found = true;
             break;
@@ -264,7 +264,7 @@ static void destroy_all_windows(void) {
         return;
 
     struct winarray* nxt = g_windows;
-    for (int i = 0; i < MAX_WINDOWS; i++) {
+    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->win) {
             if (nxt->win->gl_ctx_valid)
                 glXDestroyContext(nxt->win->display, nxt->win->gl_ctx);
@@ -278,7 +278,7 @@ static void destroy_all_windows(void) {
     }
 
     struct winarray* cur = nxt;
-    for (int i = 0; i < MAX_WINDOWS; i++) {
+    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->prev)
             nxt = nxt->prev;
         free(cur);
@@ -329,7 +329,7 @@ static void x11_shutdown(void) {
 }
 
 static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
-    if (!win) return ERR_INTERNAL;
+    if (!win) return ERR_INVALID_ARGUMENTS;
     win->handle = -1;
 	win->gpu_backend_api = gpu_backend_api;
 

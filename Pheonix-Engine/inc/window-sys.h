@@ -7,7 +7,7 @@
 #include <rendering-sys.h>
 #include <font.h>
 
-#define MAX_WINDOWS 10
+#define PX_WS_MAX_WINDOWS 10
 #define PX_WE_QUEUE_SIZE 64
 
 typedef enum {
@@ -35,12 +35,12 @@ typedef struct {
 } PX_WE_Queue;
 
 typedef struct {
-    unsigned int width;
-    unsigned int height;
+    uint32_t width;
+    uint32_t height;
 
     const char* title;
-    unsigned int flags;
-    int handle;
+    uint32_t flags;
+    int64_t handle;
 
     PX_WE_Queue queue;
 
