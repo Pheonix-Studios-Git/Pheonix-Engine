@@ -485,7 +485,7 @@ t_err_codes px_rs_gl_init(PX_WContext* ctx) {
 }
 
 t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
-	PX_Transform2 t = enginef_convert_anchor_to_transform(viewport);
+	PX_Transform2 t = px_util_convert_anchor_to_transform(viewport);
 
     memset(gr_gl_2d, 0, sizeof(*gr_gl_2d));
 
@@ -567,7 +567,7 @@ t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
 }
 
 t_err_codes px_rs_gl_init_3d(PX_AnchorRect viewport) {
-	PX_Transform2 t = enginef_convert_anchor_to_transform(viewport);
+	PX_Transform2 t = px_util_convert_anchor_to_transform(viewport);
 
     gscene_cam_3d.position[0] = 8.0f;
     gscene_cam_3d.position[1] = 8.0f;
@@ -1169,7 +1169,7 @@ void px_rs_gl_frame_update(void) {
 }
 
 void px_rs_gl_2d_resize(PX_AnchorRect viewport) {
-	PX_Transform2 t = enginef_convert_anchor_to_transform(viewport);
+	PX_Transform2 t = px_util_convert_anchor_to_transform(viewport);
 
     gr_gl_2d->screen_w = (uint32_t)t.scale.w;
     gr_gl_2d->screen_h = (uint32_t)t.scale.h;
@@ -1179,7 +1179,7 @@ void px_rs_gl_2d_resize(PX_AnchorRect viewport) {
 }
 
 void px_rs_gl_3d_resize(PX_AnchorRect viewport) {
-	PX_Transform2 t = enginef_convert_anchor_to_transform(viewport);
+	PX_Transform2 t = px_util_convert_anchor_to_transform(viewport);
 
     gr_gl_3d->screen_w = (uint32_t)t.scale.w;
     gr_gl_3d->screen_h = (uint32_t)t.scale.h;

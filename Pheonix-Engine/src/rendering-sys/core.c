@@ -859,7 +859,7 @@ void px_rs_update_scene_cam_2d(PX_Vector2 mdelta, PX_EKeycodes key) {
 			float mouse_x = mdelta.x;
 			float mouse_y = mdelta.y;
 
-			PX_Transform2 viewport_2d_t = enginef_convert_anchor_to_transform(viewport_2d);
+			PX_Transform2 viewport_2d_t = px_util_convert_anchor_to_transform(viewport_2d);
 
 			float viewport_w = viewport_2d_t.scale.w;
 			float viewport_h = viewport_2d_t.scale.h;
@@ -904,18 +904,17 @@ int px_rs_text_width(PX_Font* font, const char* text, float pixel_height) {
     return (int)(pen_x + 0.5f);
 }
 
-t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 tran, PX_Color4 color, float noise, float cradius, bool fixed_on_screen) {
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
-	PX_Transform2 ft = combine_transform2_as_container(lvt, tran);
+t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 transform, PX_Panel panel, bool fixed_on_screen) {
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 
 	struct batch_2d b = {0};
-    push_2d_quad(lvt, ft, color, &b, fixed_on_screen);
+    push_2d_quad(lvt, transform, panel.color, &b, fixed_on_screen);
 
     b.type = BATCH_2D_PANEL;
-    b.size = ft.scale;
+    b.size = transform.scale;
     b.texel_size = (PX_Scale2){1, 1};
-    b.corner_radius = cradius;
-    b.noise = noise;
+    b.corner_radius = panel.cradius;
+    b.noise = panel.noise;
     b.texture = (PX_GPU_Handle)get_blank_tex();
 	b.pure_color = false;
 	b.switch_fbo = false;
@@ -927,7 +926,7 @@ t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 tran, P
 
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRect local_viewport, PX_Vector2 pos, PX_Color4 color, PX_Font* font) {
 	if (!text) return ERR_INVALID_ARGUMENTS;
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 	PX_Vector2 fpos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=pos, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
 
     int start_vertex = gr_batch_2d->vertex_count;
@@ -983,7 +982,7 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRec
 t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color) {
 	if (thickness < 1.0f) return ERR_INVALID_ARGUMENTS;
 
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 	PX_Vector2 fspos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=start, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
 	PX_Vector2 fepos = (combine_transform2_as_container(lvt, (PX_Transform2){.pos=end, .scale=(PX_Scale2){1,1}, .rot=0})).pos;
 
@@ -1006,7 +1005,7 @@ t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_V
 
 static t_err_codes px_rs_draw_dropdown_node(PX_AnchorRect local_viewport, PX_DropdownNode* node, PX_Transform2 menu_transform, PX_Vector2 text_start_off, PX_Dropdown* dd, bool vertical) {
 	if (!node || !dd) return ERR_SUCCESS;
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 	PX_DropdownNode* cnode = node;
 	
 	PX_Transform2 node_txt_transform = combine_transform2_as_container(menu_transform, (PX_Transform2){.pos=text_start_off, .scale=node->scale, .rot=node->rot});
@@ -1079,7 +1078,13 @@ static t_err_codes px_rs_draw_dropdown_node(PX_AnchorRect local_viewport, PX_Dro
 			if (submenu_t.pos.x + submenu_t.scale.w > lvt.pos.x + lvt.scale.w) submenu_t.pos.x = lvt.pos.x + lvt.scale.w - submenu_t.scale.w;
 			if (submenu_t.pos.y + submenu_t.scale.h > lvt.pos.y + lvt.scale.h) submenu_t.pos.y = lvt.pos.y + lvt.scale.h - submenu_t.scale.h;
 			
-			px_rs_draw_panel(local_viewport, submenu_t, dd->subpanel_color, dd->noise, dd->cradius, dd->screen_pos_fixed);
+			PX_Panel submenu_panel = {
+				.color = dd->subpanel_color,
+				.noise = dd->noise,
+				.cradius = dd->cradius,
+				.blur = 0.0f
+			};
+			px_rs_draw_panel(local_viewport, submenu_t, submenu_panel, dd->screen_pos_fixed);
 			t_err_codes err = px_rs_draw_dropdown_node(local_viewport, cnode->children[0], submenu_t, text_start_off, dd, cnode->vertical);
 			if (err != ERR_SUCCESS) return err;
 		}
@@ -1099,7 +1104,13 @@ t_err_codes px_rs_draw_dropdown(PX_AnchorRect local_viewport, PX_Dropdown* dd) {
 	if (!dd->root) return ERR_SUCCESS;
 	if (dd->root->children_count < 1 || !dd->root->children) return ERR_SUCCESS;
 
-	px_rs_draw_panel(local_viewport, dd->transform, dd->panel_color, dd->noise, dd->cradius, dd->screen_pos_fixed);
+	PX_Panel menu_panel = {
+		.color = dd->panel_color,
+		.noise = dd->noise,
+		.cradius = dd->cradius,
+		.blur = 0.0f
+	};
+	px_rs_draw_panel(local_viewport, dd->transform, menu_panel, dd->screen_pos_fixed);
     return px_rs_draw_dropdown_node(local_viewport, dd->root->children[0], dd->transform, dd->text_start_offset, dd, dd->root->vertical);
 }
 
@@ -1203,7 +1214,7 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
 
 t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 
     for (size_t i = 0; i < scene->editor_object_count; i++) {
         struct batch_2d batch = {0};
@@ -1226,7 +1237,7 @@ t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_
             case PX_RS_OBJECT_2D_EDITOR_GIZMO: {
 				if (!obj->ex_data) continue;
 
-				PX_Transform2 gizmoT_true= apply_camera_2d(finalT, lvt);
+				PX_Transform2 gizmoT_true = apply_camera_2d(finalT, lvt);
 				PX_Transform2 gizmoT = gizmoT_true;
                 PX_Vector2 GXep = (PX_Vector2){gizmoT.pos.x + 50, gizmoT.pos.y};
 
@@ -1283,6 +1294,7 @@ t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene) {
         batch.pure_color = false;
 
         switch (obj->type){
+			case PX_RS_OBJECT_3D_TYPE_LOADED_MESH:
             case PX_RS_OBJECT_3D_TYPE_MESH: {
                 if (!obj->ex_data) continue;
                 struct batch_3d* b = (struct batch_3d*)obj->ex_data;
@@ -1316,7 +1328,6 @@ t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene) {
 
 t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
-	PX_Transform2 lvt = enginef_convert_anchor_to_transform(local_viewport);
 
     for (size_t i = 0; i < scene->object_count; i++) {
         PX_2D_Object* obj = &scene->objects[i];
@@ -1325,15 +1336,10 @@ t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene
         PX_Transform2 worldT = obj->world_transform;
         PX_Transform2 finalT = combine_transform2(worldT, localT);
 
-        struct batch_2d batch = {0};
-        batch.switch_fbo = false;
-        batch.pure_color = false;
-
         switch (obj->type){
             case PX_RS_OBJECT_2D_TYPE_PANEL: {
 				if (!obj->ex_data || obj->ex_data_type != PX_RS_OBJECT_2D_TYPE_PANEL) continue;
-                push_2d_quad(lvt, finalT, *((PX_Color4*)(obj->ex_data)), &batch, obj->screen_pos_fixed);
-				push_2d_batch(&batch);
+                px_rs_draw_panel(local_viewport, finalT, *((PX_Panel*)obj->ex_data), obj->screen_pos_fixed);
                 break;
             }
             default: continue;

@@ -67,6 +67,37 @@ typedef struct {
 	float rot;
 } PX_Transform2;
 
+typedef enum {
+    PX_RS_PROPERTY_BOOL,
+    PX_RS_PROPERTY_INT,
+    PX_RS_PROPERTY_UINT,
+    PX_RS_PROPERTY_FLOAT,
+    PX_RS_PROPERTY_VEC2,
+    PX_RS_PROPERTY_VEC3,
+	PX_RS_PROPERTY_QUAT,
+	PX_RS_PROPERTY_COLOR3,
+    PX_RS_PROPERTY_COLOR4,
+    PX_RS_PROPERTY_STRING,
+    PX_RS_PROPERTY_ENUM,
+    PX_RS_PROPERTY_TEXTURE,
+    PX_RS_PROPERTY_MESH,
+} PX_PropertyType;
+
+typedef struct PX_Property {
+    const char* label;
+    PX_PropertyType type;
+
+    void* data;
+	size_t size;
+
+    float min;
+    float max;
+    float step;
+
+	struct PX_Property* next;
+	struct PX_Property* parent;
+} PX_Property;
+
 typedef struct PX_DropdownNode {
 	const char* label;
 	size_t identifier;
@@ -112,8 +143,16 @@ typedef struct {
 	bool screen_pos_fixed;
 } PX_Dropdown;
 
+typedef struct {
+	PX_Color4 color;
+	float blur;
+	float noise;
+	float cradius;
+} PX_Panel;
+
 typedef enum {
     PX_RS_OBJECT_3D_TYPE_MESH,
+	PX_RS_OBJECT_3D_TYPE_LOADED_MESH, // Same as PX_RS_OBJECT_3D_TYPE_MESH but with a flag specifying loaded via mesh loader
     PX_RS_OBJECT_3D_TYPE_LIGHT,
     PX_RS_OBJECT_3D_TYPE_CAMERA,
     PX_RS_OBJECT_3D_TYPE_EMPTY
@@ -137,6 +176,8 @@ typedef struct PX_3D_Object {
     bool active;
     PX_3D_Object_Type type;
 
+	PX_Property* properties;
+
     bool static_object;
 
     PX_Transform3 world_transform;
@@ -153,12 +194,14 @@ typedef struct PX_3D_Object {
 ExData field
 
 1. Type - Sprite -> Batch_UI structure
-2. Type - Panel -> Color4 structure
+2. Type - Panel -> PX_Panel structure
 */
 typedef struct PX_2D_Object {
     char* name;
     bool active;
     PX_2D_Object_Type type;
+
+	PX_Property* properties;
 
     bool static_object;
 
@@ -290,6 +333,8 @@ typedef struct {
     float y;
     float w;
     float h;
+
+	void* window; // PX_Window*
 } PX_AnchorRect;
 
 typedef enum {
@@ -450,7 +495,7 @@ void px_rs_update_scene_cam_3d(PX_Vector2 mdelta, PX_EKeycodes key); // Updates 
 void px_rs_update_scene_cam_2d(PX_Vector2 mdelta, PX_EKeycodes key); // Update the 2D Scene Camera
 void px_rs_config_scene_cam_3d(float mouse_sensitivity, float speed); // Configurate 3D Scene Camera
 void px_rs_config_scene_cam_2d(float speed); // Configurate 2D Scene Camera
-t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 tran, PX_Color4 color, float noise, float cradius, bool fixed_on_screen); // Draw a UI Panel
+t_err_codes px_rs_draw_panel(PX_AnchorRect local_viewport, PX_Transform2 transform, PX_Panel panel, bool fixed_on_screen); // Draw a UI Panel
 int px_rs_text_width(struct PX_Font* font, const char* text, float pixel_height); // Get Final Width of UI Text on Screen without Drawing it
 t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRect local_viewport, PX_Vector2 pos, PX_Color4 color, struct PX_Font* font); // Render UI Text on Screen
 t_err_codes px_rs_draw_line(PX_AnchorRect local_viewport, PX_Vector2 start, PX_Vector2 end, float thickness, PX_Color4 color); // Draw a UI Line on Screen

@@ -436,7 +436,13 @@ static int editor_click_object_2d(PX_Scene_2D* scene, PX_Vector2 mpos, PX_2D_Obj
 }
 
 void editor_draw_scene_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 iline_color, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size, int xspacing, int yspacing) {
-	px_rs_draw_panel(local_viewport, (PX_Transform2){.pos=(PX_Vector2){transform.pos.x,transform.pos.y+4}, .scale=transform.scale, .rot=transform.rot}, color, noise, cradius, true);
+	PX_Panel panel = {
+		.color = color,
+		.noise = noise,
+		.cradius = cradius,
+		.blur = 0.0f
+	};
+	px_rs_draw_panel(local_viewport, transform, panel, true);
 
     int x = transform.pos.x + 16;
     int y = transform.pos.y + 24;
@@ -556,3 +562,48 @@ void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font*
 	}
 }
 
+static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transform2 container, PX_Vector2 mpos, PX_Vector2 cpos, PX_Font* font, float font_size, PX_Color4 text_color) {
+	if (!p || !font || font_size < 1.0f) return;
+	if (!p->label) return;
+
+	PX_Scale2 rendered_scale = (PX_Scale2){.w=px_rs_text_width(font, p->label, font_size), .h=font_size + 16};
+	if (cpos.x + rendered_scale.w > container.pos.x + container.scale.w || cpos.x < container.pos.x) return;
+	if (cpos.y + rendered_scale.h > container.pos.y + container.scale.h || cpos.y < container.pos.y) return;
+
+	PX_Vector2 rpos = (PX_Vector2){.x=cpos.x, .y=cpos.y + 8}; // Padding
+	px_rs_render_text(p->label, font_size, lvt, rpos, text_color, font);
+
+	cpos.y += rendered_scale.h;
+	
+	if (p->next) editor_draw_properties(p->next, lvt, container, mpos, cpos, font, font_size, text_color);
+}
+
+void editor_draw_properties_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos, PX_Transform2 transform, PX_Color4 text_color, PX_Color4 color, PX_Color4 Hcolor, float noise, float cradius, PX_Font* font, float font_size) {
+	PX_Panel panel = {
+		.color = color,
+		.blur = 0.0f,
+		.cradius = cradius,
+		.noise = noise
+	};
+	px_rs_draw_panel(local_viewport, transform, panel, true);
+
+	switch (state->current_mode) {
+		case PX_EDITOR_MODE_3D: {
+			PX_3D_Object* obj = state->scene_3d->active_object;
+			if (!obj) return;
+			if (!obj->properties) return;
+
+			editor_draw_properties(obj->properties, local_viewport, transform, mpos, (PX_Vector2){transform.pos.x+6, transform.pos.y+2}, font, font_size, text_color);
+			break;
+		}
+		case PX_EDITOR_MODE_2D: {
+			PX_2D_Object* obj = state->scene_2d->active_object;
+			if (!obj) return;
+			if (!obj->properties) return;
+
+			editor_draw_properties(obj->properties, local_viewport, transform, mpos, (PX_Vector2){transform.pos.x+6, transform.pos.y+2}, font, font_size, text_color);
+			break;
+		}
+		default: break;
+	}
+}

@@ -41,7 +41,7 @@ bool is_mouse_on(PX_Transform2 tran) {
 }
 
 bool is_mouse_on_anchor(PX_AnchorRect anchor) {
-	PX_Transform2 tran = enginef_convert_anchor_to_transform(anchor);
+	PX_Transform2 tran = px_util_convert_anchor_to_transform(anchor);
 
     PX_Vector2 pos = tran.pos;
     PX_Scale2 scale = tran.scale;

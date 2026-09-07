@@ -14,9 +14,6 @@
 static char* save_path = NULL;
 static PX_Dropdown* menu_dropdown = NULL;
 
-static size_t loads[PX_RS_MAX_OBJECTS_PER_SCENE] = {0};
-static size_t load_ptr = 0;
-
 static bool fullscreened = false;
 
 // FILE Options
@@ -25,14 +22,11 @@ static void handle_file_new_project(void) {
 	PX_EditorMode bmode = PX_EDITOR_MODE_3D;
 	if (state) bmode = state->current_mode;
 
-	for (size_t i = 0; i < load_ptr; i++) {
-        PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
-        if (obj->type == PX_RS_OBJECT_3D_TYPE_MESH) {
-            px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
-        }
-    }
-	load_ptr = 0;
+	enginef_deinit_3drenderer_main_scene();
+	enginef_deinit_2drenderer_main_scene();
+	
     editor_new_project(&engine_3drenderer_main_scene, &engine_2drenderer_main_scene, "Untitled", bmode);
+
 	enginef_init_3drenderer_main_scene();
 	enginef_init_2drenderer_main_scene();
 }
@@ -48,10 +42,7 @@ static void handle_file_save_as(void) {
 static void handle_file_import(void) {
     char* file = px_ws_open_file_selector_dialog();
     if (!file) return;
-    size_t id = px_rs_loader_load_file(&engine_3drenderer_main_scene, file);
-    if (id != 0) {
-        loads[load_ptr++] = id-1;
-    }
+    (void)px_rs_loader_load_file(&engine_3drenderer_main_scene, file);
 }
 static void handle_file_quit(void) {
     PX_Event_GSignal signal = {0};
@@ -59,15 +50,6 @@ static void handle_file_quit(void) {
     signal.core_quit = true;
 
     event_send_gsignal(&signal);
-
-    // Cleanup
-    for (size_t i = 0; i < load_ptr; i++) {
-        PX_3D_Object* obj = &engine_3drenderer_main_scene.objects[loads[i]];
-        if (obj->type == PX_RS_OBJECT_3D_TYPE_MESH) {
-            px_rs_loader_destroy_load(&engine_3drenderer_main_scene, obj);
-        }
-    }
-	load_ptr = 0;
 }
 
 // VIEW Options
