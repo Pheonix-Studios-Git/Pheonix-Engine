@@ -26,6 +26,17 @@ typedef struct {
 	PX_GPU_Backend gpu_backend;
 } t_args;
 
+typedef struct engine_ui_panel {
+	bool fixed;
+
+	struct engine_ui_panel* bottom;
+	struct engine_ui_panel* top;
+	struct engine_ui_panel* right;
+	struct engine_ui_panel* left;
+
+	PX_AnchorRect* anchor;
+} t_engine_ui_panel;
+
 // Main
 static bool engine_running = false;
 
@@ -166,6 +177,30 @@ static PX_AnchorRect engine_anchor_all = {
     .w = 1.0f, .h = 1.0f,
 	.window = (void*)&engine_window_main
 };
+
+// Engine UI Panels
+static t_engine_ui_panel engine_ui_panel_menubar = {
+	.fixed = true,
+	.anchor = &engine_anchor_menubar
+};
+static t_engine_ui_panel engine_ui_panel_scene_panel = {
+	.fixed = false,
+	.anchor = &engine_anchor_scene_panel
+};
+static t_engine_ui_panel engine_ui_panel_scene_properties_panel = {
+	.fixed = false,
+	.anchor = &engine_anchor_scene_properties_panel
+};
+static t_engine_ui_panel engine_ui_panel_scene_editor = {
+	.fixed = false,
+	.anchor = &engine_anchor_scene_editor
+};
+
+static bool engine_flag_panel_resize = false;
+static bool engine_flag_panel_resize_y = false;
+static bool engine_flag_panel_resize_x = false;
+static t_engine_ui_panel* engine_flag_panel_resize_panel = NULL;
+static PX_Vector2 engine_flag_panel_resize_og_mouse_pos = (PX_Vector2){0};
 
 static void print_help(void) {
     printf("Usage: pheonix-engine [--COMMANDS]\n");
@@ -404,6 +439,32 @@ static bool enginef_init_dropdowns(void) {
 	}
 }
 
+static void enginef_init_ui_panels(void) {
+	// Menubar (Fixed)
+	engine_ui_panel_menubar.top = NULL;
+	engine_ui_panel_menubar.right = NULL;
+	engine_ui_panel_menubar.left = NULL;
+	engine_ui_panel_menubar.bottom = NULL;
+
+	// Scene Panel
+	engine_ui_panel_scene_panel.top = &engine_ui_panel_menubar;
+	engine_ui_panel_scene_panel.right = &engine_ui_panel_scene_editor;
+	engine_ui_panel_scene_panel.left = NULL;
+	engine_ui_panel_scene_panel.bottom = &engine_ui_panel_scene_properties_panel;
+
+	// Scene Properties Panel
+	engine_ui_panel_scene_properties_panel.top = &engine_ui_panel_scene_panel;
+	engine_ui_panel_scene_properties_panel.right = &engine_ui_panel_scene_editor;
+	engine_ui_panel_scene_properties_panel.left = NULL;
+	engine_ui_panel_scene_properties_panel.bottom = NULL;
+
+	// Scene Editor
+	engine_ui_panel_scene_editor.top = &engine_ui_panel_menubar;
+	engine_ui_panel_scene_editor.right = NULL;
+	engine_ui_panel_scene_editor.left = &engine_ui_panel_scene_panel;
+	engine_ui_panel_scene_editor.bottom = NULL;
+}
+
 static void enginef_event_mouse_click(void) {
     // Dropdowns
     event_click_dropdown(&engine_menu_dropdown, false);
@@ -416,6 +477,36 @@ static void enginef_event_mouse_click(void) {
         engine_font_ui, 16.0f,
         8, 16
     );
+
+	return;
+
+	// Resize Check
+	// Scene Panel (x)
+	PX_AnchorRect edge_anchor_x = {
+		.window = &engine_window_main,
+		.x = engine_anchor_scene_panel.x, .y = engine_anchor_scene_panel.y,
+		.w = 2, .h = engine_anchor_scene_panel.h
+	};
+	if (is_mouse_on_anchor(edge_anchor_x)) {
+		engine_flag_panel_resize_panel = &engine_ui_panel_scene_panel,
+		engine_flag_panel_resize_og_mouse_pos = (PX_Vector2){engine_mouse_x, engine_mouse_y};
+		engine_flag_panel_resize = true;
+		engine_flag_panel_resize_x = true;
+		engine_flag_panel_resize_y = false;
+	}
+
+	PX_AnchorRect edge_anchor_y = {
+		.window = &engine_window_main,
+		.x = engine_anchor_scene_panel.x, .y = engine_anchor_scene_panel.y,
+		.w = engine_anchor_scene_panel.w, .h = 2
+	};
+	if (is_mouse_on_anchor(edge_anchor_y)) {
+		engine_flag_panel_resize_panel = &engine_ui_panel_scene_panel,
+		engine_flag_panel_resize_og_mouse_pos = (PX_Vector2){engine_mouse_x, engine_mouse_y};
+		engine_flag_panel_resize = true;
+		engine_flag_panel_resize_y = true;
+		engine_flag_panel_resize_x = false;
+	}
 }
 
 static void enginef_event_mouse_right_click(void) {
@@ -492,6 +583,47 @@ static void enginef_core_render(void) {
             gizmo->active = true;
         }
     }
+
+	// Resize Handling
+	if (engine_flag_panel_resize && engine_flag_panel_resize_panel && engine_flag_panel_resize_panel->anchor && engine_flag_panel_resize_panel->anchor->window) {
+		t_engine_ui_panel* panel = engine_flag_panel_resize_panel;
+
+		float x_diff = engine_mouse_x - engine_flag_panel_resize_og_mouse_pos.x;
+		float y_diff = engine_mouse_y - engine_flag_panel_resize_og_mouse_pos.y;
+
+		float normalized_x_diff = x_diff / ((PX_Window*)panel->anchor->window)->width;
+		float normalized_y_diff = y_diff / ((PX_Window*)panel->anchor->window)->height;
+
+		if (engine_flag_panel_resize_x) {
+			t_engine_ui_panel* neighbor = NULL;
+			if (normalized_x_diff > 0.0f) neighbor = panel->right;
+			else neighbor = panel->left;
+
+			bool neighbor_fixed = neighbor && neighbor->fixed;
+			if (!neighbor_fixed) {
+				panel->anchor->w += normalized_x_diff;
+				// if (neighbor && neighbor->anchor) {
+				// 	neighbor->anchor->w -= normalized_x_diff;
+				// 	neighbor->anchor->x -= normalized_x_diff;
+				// }
+			} else {
+				// Don't resize into a fixed panel.
+				// if (normalized_x_diff > 0.0f) panel->anchor->w += normalized_x_diff;
+				// else panel->anchor->w += normalized_x_diff;
+			}
+		}
+
+		panel->anchor->w = fmaxf(0.0f, fminf(1.0f, panel->anchor->w));
+    	panel->anchor->h = fmaxf(0.0f, fminf(1.0f, panel->anchor->h));
+
+		if (panel->right && panel->right->anchor) panel->right->anchor->w = fmaxf(0.0f, fminf(1.0f, panel->right->anchor->w));
+		if (panel->left && panel->left->anchor) panel->left->anchor->w = fmaxf(0.0f, fminf(1.0f, panel->left->anchor->w));
+		if (panel->top && panel->top->anchor) panel->top->anchor->h = fmaxf(0.0f, fminf(1.0f, panel->top->anchor->h));
+		if (panel->bottom && panel->bottom->anchor) panel->bottom->anchor->h = fmaxf(0.0f, fminf(1.0f, panel->bottom->anchor->h));
+
+		engine_flag_panel_resize_og_mouse_pos.x = engine_mouse_x;
+    	engine_flag_panel_resize_og_mouse_pos.y = engine_mouse_y;
+	}
 }
 
 static void enginef_core_handle_core_signals(PX_Event_GSignal* core_signal, bool core_signal_active) {
@@ -712,8 +844,11 @@ int main(int argc, char** argv) {
     }
 
     // Load Objects
+	// UI Panels
+	enginef_init_ui_panels();
+
     // Dropdowns
-    if (!enginef_init_dropdowns()) {
+	if (!enginef_init_dropdowns()) {
 		fprintf(stderr, "Error: Failed to initialize UI Elements!\n");
 		
         px_font_destroy(engine_font_ui);
@@ -872,8 +1007,12 @@ int main(int argc, char** argv) {
                                 engine_mouse_saved_y = 0;
                                 px_ws_set_mouse_locked(&engine_window_main, false);
                             }
-                            break;
+							break;
                         }
+						case EKeycode_MouseLButton: {
+							if (engine_flag_panel_resize) engine_flag_panel_resize = false;
+							break;
+						}
                         
 						case EKeycode_MouseScrollUp:
 						case EKeycode_MouseScrollDown: {
