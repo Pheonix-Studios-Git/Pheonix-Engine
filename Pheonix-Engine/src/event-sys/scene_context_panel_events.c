@@ -12,14 +12,17 @@
 
 #include <editor.h>
 
-static const PX_Color4 white_color = (const PX_Color4){0xFF, 0xFF, 0xFF, 0xFF};
+static const PX_Color4 white_color = {0xFF, 0xFF, 0xFF, 0xFF};
 static PX_Dropdown* scene_context_panel_dropdown = NULL;
 
-static void append_to_scene_2d(PX_2D_Object* obj) {
+static void append_to_scene_2d(PX_2D_Object* obj, PX_2D_Object** out_ptr) {
 	if (!obj) return;
 	if (engine_2drenderer_main_scene.object_count >= PX_RS_MAX_OBJECTS_PER_SCENE) return;
 
-	engine_2drenderer_main_scene.objects[engine_2drenderer_main_scene.object_count++] = *obj;
+	engine_2drenderer_main_scene.objects[engine_2drenderer_main_scene.object_count] = *obj;
+	if (out_ptr) *out_ptr = &engine_2drenderer_main_scene.objects[engine_2drenderer_main_scene.object_count];
+
+	engine_2drenderer_main_scene.object_count++;
 }
 
 // FILE Options
@@ -37,22 +40,26 @@ static void handle_create_2d_panel(void) {
 	};
 
 	// Connect Properties
-	PX_Property* p_color = px_util_property_add("Color", PX_RS_PROPERTY_COLOR4, NULL);
-	if (!p_color) {free(panel); return;}
+	PX_Property* p_name = px_util_property_add("Name", PX_RS_PROPERTY_STRING, NULL);
+	if (!p_name) {free(panel); return;}
+	p_name->data = NULL; p_name->size = sizeof(char*);
+
+	PX_Property* p_color = px_util_property_add("Color", PX_RS_PROPERTY_COLOR4, p_name);
+	if (!p_color) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
 	p_color->data = &panel->color; p_color->size = sizeof(PX_Color4);
 
 	PX_Property* p_blur = px_util_property_add("Blur", PX_RS_PROPERTY_FLOAT, p_color);
-	if (!p_blur) {px_util_destroy_properties(p_color, NULL); free(panel); return;}
+	if (!p_blur) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
 	p_blur->data = &panel->blur; p_blur->size = sizeof(float);
 	p_blur->min = 0.0f; p_blur->max = 1.0f; p_blur->step = 0.05f;
 
 	PX_Property* p_cradius = px_util_property_add("Corner Radius", PX_RS_PROPERTY_FLOAT, p_blur);
-	if (!p_cradius) {px_util_destroy_properties(p_color, NULL); free(panel); return;}
+	if (!p_cradius) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
 	p_cradius->data = &panel->cradius; p_cradius->size = sizeof(float);
 	p_cradius->min = 0.0f; p_cradius->max = 100.0f; p_cradius->step = 0.1f;
 
 	PX_Property* p_noise = px_util_property_add("Noise", PX_RS_PROPERTY_FLOAT, p_cradius);
-	if (!p_noise) {px_util_destroy_properties(p_color, NULL); free(panel); return;}
+	if (!p_noise) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
 	p_noise->data = &panel->noise; p_noise->size = sizeof(float);
 	p_noise->min = 0.0f; p_noise->max = 1.0f; p_noise->step = 0.05f;
 
@@ -60,7 +67,7 @@ static void handle_create_2d_panel(void) {
 		.name = "Untitled Panel",
 		.type = PX_RS_OBJECT_2D_TYPE_PANEL,
 		.active = true,
-		.properties = p_color, // Start property
+		.properties = p_name, // Start property
 		.static_object = false,
 		.world_transform = (PX_Transform2){.pos=(PX_Vector2){0}, .scale=(PX_Scale2){1,1}, .rot=0},
 		.local_transform = (PX_Transform2){.pos=(PX_Vector2){0}, .scale=(PX_Scale2){100,100}, .rot=0},
@@ -70,7 +77,10 @@ static void handle_create_2d_panel(void) {
 		.ex_data_type = PX_RS_OBJECT_2D_TYPE_PANEL
 	};
 
-	append_to_scene_2d(&new_panel);
+	PX_2D_Object* final_obj = NULL;
+	append_to_scene_2d(&new_panel, &final_obj);
+
+	if (final_obj) p_name->data = &final_obj->name;
 }
 
 void scene_context_panel_evs_init(PX_Dropdown* scene_context_panel_dd) {

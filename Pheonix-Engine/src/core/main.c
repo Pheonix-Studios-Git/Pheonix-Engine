@@ -307,7 +307,6 @@ void enginef_deinit_2drenderer_main_scene(void) {
 
 		switch (obj->ex_data_type) {
 			case PX_RS_OBJECT_2D_TYPE_PANEL: {
-				PX_Panel* p = (PX_Panel*)obj->ex_data;
 				free(obj->ex_data);
 				break;
 			}
@@ -589,10 +588,10 @@ static void enginef_core_render(void) {
 		t_engine_ui_panel* panel = engine_flag_panel_resize_panel;
 
 		float x_diff = engine_mouse_x - engine_flag_panel_resize_og_mouse_pos.x;
-		float y_diff = engine_mouse_y - engine_flag_panel_resize_og_mouse_pos.y;
+		// float y_diff = engine_mouse_y - engine_flag_panel_resize_og_mouse_pos.y;
 
 		float normalized_x_diff = x_diff / ((PX_Window*)panel->anchor->window)->width;
-		float normalized_y_diff = y_diff / ((PX_Window*)panel->anchor->window)->height;
+		// float normalized_y_diff = y_diff / ((PX_Window*)panel->anchor->window)->height;
 
 		if (engine_flag_panel_resize_x) {
 			t_engine_ui_panel* neighbor = NULL;

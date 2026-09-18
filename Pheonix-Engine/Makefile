@@ -3,7 +3,8 @@
 # =========================
 
 # -------- Project --------
-PROJECT := pheonix-engine
+PROJECT_EXTENSION ?=
+PROJECT := pheonix-engine$(PROJECT_EXTENSION)
 
 SRC_DIR := src
 INC_DIR := inc
@@ -48,7 +49,7 @@ TARGET := $(OUT_DIR)/$(PROJECT)
 
 # === Flags ===
 CSTD := -std=c11
-WARN := -Wall -Wextra -Wpedantic -Wstrict-prototypes
+WARN := -Wall -Wextra -Wno-pedantic -Wstrict-prototypes
 DEFS :=
 INCS := -I$(INC_DIR)
 
@@ -63,7 +64,7 @@ ifneq ($(TARGET_CPU),generic)
 endif
 
 CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
-LDFLAGS := $(EXTRA) -lX11 -lGL -lGLU -lGLEW -lm -lpng -lXrender -lassimp -ldl
+LDFLAGS := $(EXTRA) -lm -lpng -lassimp -ldl
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')

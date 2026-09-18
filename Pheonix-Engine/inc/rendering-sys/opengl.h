@@ -3,13 +3,14 @@
 #include <rendering-sys.h>
 #include <font.h>
 
+#define PX_RS_OPENGL_PROFILE_COMPATIBILITY
+#define PX_RS_OPENGL_MAJ_VERSION 4
+#define PX_RS_OPENGL_MIN_VERSION 5
+
 #ifndef __PHEONIX_ENGINE__RENDERING_SYS__OPENGL_NO_INC__
 
 // Includes OpenGL in order
-#include <GL/glew.h>
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include <GL/glx.h>
+#include <external/glad_opengl_4_5.h>
 
 #endif
 

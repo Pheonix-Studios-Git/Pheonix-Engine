@@ -167,7 +167,7 @@ static void wl_output_handle_mode(void* data, struct wl_output* wl_output, uint3
 
 static struct wayland_lib g_wl_lib = {0};
 
-static PX_Scale2 g_display_scale = (PX_Scale2){0};
+static PX_Scale2 g_display_scale = {0};
 
 static struct winarray* g_windows = NULL;
 static struct wl_display* g_display = NULL;
@@ -195,6 +195,7 @@ static const struct wl_output_listener g_output_listener = {
 	.description = NULL, // Unused
 };
 
+__attribute__((unused))
 static int64_t append_window(struct window* win) {
     struct winarray* node = (struct winarray*)malloc(sizeof(struct winarray));
     if (!node) return -1;
@@ -221,6 +222,7 @@ static int64_t append_window(struct window* win) {
     return node->handle;
 }
 
+__attribute__((unused))
 static struct window* get_window(int64_t handle) {
     if (!g_windows) return NULL;
 
@@ -234,6 +236,7 @@ static struct window* get_window(int64_t handle) {
     return NULL;
 }
 
+__attribute__((unused))
 static void remove_window(int handle) {
     if (!g_windows) return;
 
@@ -282,6 +285,7 @@ static void destroy_all_windows(void) {
 
 static void wl_reg_handle_global(void* data, struct wl_registry* wl_registry, uint32_t name, const char* interface, uint32_t version) {
 	if (!wl_registry || !interface || !g_wl_lib.lib) return;
+	(void)data;
 
 	if (strcmp(interface, g_wl_lib.compositor_interface->name) == 0) {
 		g_compositor = (struct wl_compositor*)((void*)g_wl_lib.proxy_marshal_flags((struct wl_proxy*)wl_registry, WL_REGISTRY_BIND,  g_wl_lib.compositor_interface, version, 0, name, interface, version, NULL));
@@ -294,6 +298,8 @@ static void wl_reg_handle_global(void* data, struct wl_registry* wl_registry, ui
 }
 static void wl_output_handle_mode(void* data, struct wl_output* wl_output, uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
     if (!wl_output) return;
+	(void)refresh;
+	(void)data;
 
     if (flags & WL_OUTPUT_MODE_CURRENT) {
 		g_display_scale = (PX_Scale2){width, height};
@@ -345,6 +351,7 @@ static int64_t wl_allocate_shm_file(size_t size) {
 	return fd;
 }
 
+__attribute__((unused))
 static t_err_codes wayland_init(void) {
 	// Load lib
 	g_wl_lib.lib = dlopen("libwayland-client.so.0", RTLD_LAZY);
@@ -454,7 +461,7 @@ static t_err_codes wayland_init(void) {
 	if (shm_fd < 0) goto cleanup;
 
 	uint8_t* pool_data = (uint8_t*)mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE, MAP_SHARED, (int)shm_fd, 0);
-	if (!pool_data) {
+	if (pool_data == MAP_FAILED) {
 		close(shm_fd);
 		goto cleanup;
 	}
@@ -486,6 +493,7 @@ static t_err_codes wayland_init(void) {
 	}
 }
 
+__attribute__((unused))
 static void wayland_shutdown(void) {
     if (g_windows) destroy_all_windows();
 
@@ -507,15 +515,16 @@ static void wayland_shutdown(void) {
         g_display = NULL;
     }
 
-	if (g_shm_fd) {
-        close(g_shm_fd);
-        g_shm_fd = -1;
-    }
+	if (g_shm_fd >= 0) {
+		close((int)g_shm_fd);
+		g_shm_fd = -1;
+	}
 	
 	dlclose(g_wl_lib.lib);
 	memset(&g_wl_lib, 0, sizeof(struct wayland_lib));
 }
 
+__attribute__((unused))
 static t_err_codes wayland_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 	if (!win) return ERR_INVALID_ARGUMENTS;
     win->handle = -1;
@@ -525,4 +534,6 @@ static t_err_codes wayland_create(PX_Window* win, PX_GPU_Backend gpu_backend_api
     if (!iwin) return ERR_ALLOC_FAILED;
 
 	iwin->display = g_display;
+
+	return ERR_SUCCESS;
 }

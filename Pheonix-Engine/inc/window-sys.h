@@ -60,6 +60,16 @@ typedef struct {
     uint32_t title_text_color;
 } PX_WindowDesign;
 
+typedef enum {
+    PX_DOCK_NODE_SPLIT,
+    PX_DOCK_NODE_TABS
+} PX_DockNodeType;
+
+typedef enum {
+    PX_DOCK_SPLIT_HORIZONTAL,
+    PX_DOCK_SPLIT_VERTICAL
+} PX_DockSplitDirection;
+
 t_err_codes px_ws_init(void);
 void px_ws_shutdown(void);
 

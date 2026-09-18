@@ -130,16 +130,10 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
             return ERR_INTERNAL;
         }
 
-        cJSON* plane = cJSON_GetObjectItem(g, "planeBounds"); 
-        cJSON* atlasb = cJSON_GetObjectItem(g, "atlasBounds");
         struct px_sdf_glyph* out = &glyphs[i];
+		memset(out, 0, sizeof(struct px_sdf_glyph));
 
-        if (!plane || !atlasb) {
-            memset(out, 0, sizeof(*out));
-            continue;
-        }
-
-        cJSON* unicode = cJSON_GetObjectItem(g, "unicode");
+		cJSON* unicode = cJSON_GetObjectItem(g, "unicode");
         if (!unicode) {
             cJSON* index = cJSON_GetObjectItem(g, "index");
             if (!index) {
@@ -160,6 +154,11 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
             return ERR_INTERNAL;
         }
         out->advance = advance->valuedouble * desc->pixel_size;
+
+		cJSON* plane = cJSON_GetObjectItem(g, "planeBounds"); 
+        cJSON* atlasb = cJSON_GetObjectItem(g, "atlasBounds");
+        if (!plane || !atlasb) continue;
+
         cJSON* leftj = cJSON_GetObjectItem(plane, "left");
         cJSON* rightj = cJSON_GetObjectItem(plane, "right");
         cJSON* topj = cJSON_GetObjectItem(plane, "top");

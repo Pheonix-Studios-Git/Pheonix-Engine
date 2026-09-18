@@ -102,8 +102,8 @@ typedef struct PX_DropdownNode {
 	const char* label;
 	size_t identifier;
 
-	void (*on_select)(struct PX_DropdownNode* node, void* user_data);
-	void* user_data;
+	void (*on_select)(struct PX_DropdownNode* node, void* callback_data);
+	void* callback_data;
 
 	struct PX_DropdownNode* parent;
 	struct PX_DropdownNode* next;

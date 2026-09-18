@@ -474,14 +474,14 @@ PX_Scale2 px_rs_gl_get_flat_fbo_scale(void) {
 }
 
 t_err_codes px_rs_gl_init(PX_WContext* ctx) {
-	(void)ctx; // No Use
+    (void)ctx;
 
-    GLenum err = glewInit();
-    if (err != GLEW_OK) {
-        fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
-        return ERR_GL_GLEW_INIT_FAILED;
+    int version = gladLoadGL();
+    if (version == 0) {
+        fprintf(stderr, "[OpenGL] Failed to load OpenGL functions!\n");
+        return ERR_GL_INIT_FAILED;
     }
-    return ERR_SUCCESS;
+	return ERR_SUCCESS;
 }
 
 t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
@@ -1189,6 +1189,7 @@ void px_rs_gl_3d_resize(PX_AnchorRect viewport) {
 }
 
 void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
+	(void)screen_scale;
     int64_t local_x = mpos.x - gr_gl_3d->screen_x;
 	int64_t local_y = mpos.y - gr_gl_3d->screen_y;
 

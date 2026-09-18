@@ -4,13 +4,30 @@
 #include <rendering-sys.h>
 #include <font.h>
 
+typedef struct PX_Event_TextField {
+	PX_Panel panel;
+
+	PX_Font* font;
+	float pixel_height;
+
+	const char* placeholder_text;
+	PX_Color4 placeholder_color;
+
+	bool is_typing;
+	bool fixed_on_screen;
+
+	void* callback_data;
+	void (*on_enter)(struct PX_Event_TextField* self, char* text, void* callback_data);
+} PX_Event_TextField;
+
 typedef enum {
     EVENT_GSIGNAL_UNKNOWN = 0,
     EVENT_GSIGNAL_UI_DROPDOWN_CLICK,
     EVENT_GSIGNAL_UI_SCENE_PANEL_CLICK,
     EVENT_GSIGNAL_CORE_QUIT,
     EVENT_GSIGNAL_3D_HOVER,
-	EVENT_GSIGNAL_2D_HOVER
+	EVENT_GSIGNAL_2D_HOVER,
+	EVENT_GSIGNAL_TEXT_FIELD_ENTER
 } PX_Event_GSignals;
 
 typedef struct {
@@ -32,6 +49,11 @@ typedef struct {
 typedef PX_Event_GSignal_3dHover PX_Event_GSignal_2dHover;
 
 typedef struct {
+	PX_Event_TextField* text_field;
+	char* text;
+} PX_Event_GSignal_TextFieldEnter;
+
+typedef struct {
     PX_Event_GSignals type;
     union {
         PX_Event_GSignal_UIDropdownClick ui_dropdown_click;
@@ -39,6 +61,7 @@ typedef struct {
         bool core_quit;
         PX_Event_GSignal_3dHover mouse_hover_on_3d;
 		PX_Event_GSignal_2dHover mouse_hover_on_2d;
+		PX_Event_GSignal_TextFieldEnter text_field_enter;
     };
 } PX_Event_GSignal;
 
@@ -56,6 +79,7 @@ void event_resize(PX_Scale2 main_window_scale);
 void event_mouse_move(PX_Vector2 mouse_position);
 void event_hover_dropdown(PX_Dropdown* dd);
 void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too);
+void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, PX_Transform2 transform);
 void event_send_gsignal(PX_Event_GSignal* signal);
 void event_pop_gsignal(PX_Event_GSignal* out);
 void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_len, PX_Event_GSignal* core_signal, bool* core_signal_active);

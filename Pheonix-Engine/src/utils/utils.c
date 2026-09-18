@@ -38,6 +38,18 @@ PX_Transform2 px_util_convert_anchor_to_transform(PX_AnchorRect r) {
     };
 }
 
+PX_AnchorRect px_util_convert_transform_to_anchor(PX_Transform2 t, PX_Window* win) {
+	if (!win) return (PX_AnchorRect){0}; // If Scale is 0, it can't be used!
+
+    return (PX_AnchorRect){
+        .x = (float)t.pos.x / (float)win->width,
+		.y = (float)t.pos.y / (float)win->height,
+		.w = (float)t.scale.w / (float)win->width,
+		.h = (float)t.scale.h / (float)win->height,
+		.window = win
+    };
+}
+
 PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size) {
     PX_DropdownNode* node = malloc(sizeof(*node));
     if (!node) return NULL;
@@ -46,7 +58,7 @@ PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode
         .label = label ? px_util_strdup(label) : NULL,
 		.identifier = iden,
         .on_select = NULL,
-        .user_data = NULL,
+        .callback_data = NULL,
         .parent = parent,
         .next = NULL,
         .children = NULL,
@@ -119,7 +131,7 @@ PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Pr
 void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 	PX_Property* cur = start;
 	while (cur) {
-		if (cur->label) free(cur->label);
+		if (cur->label) free((void*)cur->label);
 
 		PX_Property* to_free = cur;
 		cur = cur->next;

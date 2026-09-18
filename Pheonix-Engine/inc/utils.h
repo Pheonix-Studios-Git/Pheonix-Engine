@@ -2,9 +2,11 @@
 
 #include <rendering-sys.h>
 #include <font.h>
+#include <window-sys.h>
 
 char* px_util_strdup(const char* s);
 PX_Transform2 px_util_convert_anchor_to_transform(PX_AnchorRect r);
+PX_AnchorRect px_util_convert_transform_to_anchor(PX_Transform2 t, PX_Window* win);
 PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size);
 void px_util_dropdown_node_destroy(PX_DropdownNode* node);
 void px_util_dropdown_destroy(PX_Dropdown* dd);

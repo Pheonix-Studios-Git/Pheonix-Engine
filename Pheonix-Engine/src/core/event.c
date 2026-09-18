@@ -16,6 +16,24 @@ static PX_Vector2 mouse_pos = {0};
 static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
 static int gsignals_count = 0;
 
+static PX_Transform2 combine_transform2_as_container(PX_Transform2 parent, PX_Transform2 local) {
+    PX_Transform2 out = {0};
+
+    out.scale.w = local.scale.w;
+    out.scale.h = local.scale.h;
+	out.rot = parent.rot + local.rot;
+
+	float c = cosf(parent.rot);
+    float s = sinf(parent.rot);
+
+	float rotated_x = local.pos.x * c - local.pos.y * s;
+    float rotated_y = local.pos.x * s + local.pos.y * c;
+
+    out.pos.x = parent.pos.x + rotated_x;
+    out.pos.y = parent.pos.y + rotated_y;
+    return out;
+}
+
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
     mwindow_s = main_window_scale;
     mouse_pos = mouse_position;
@@ -147,7 +165,7 @@ void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too) {
 		}
 		return;
 	}
-	if (node->on_select) node->on_select(node, node->user_data);
+	if (node->on_select) node->on_select(node, node->callback_data);
 	else {
 		// Incase silent event is not used, send global wide event
 		PX_Event_GSignal gsignal = {
@@ -162,6 +180,17 @@ void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too) {
 
 	event_dropdown_close_children(dd->root);
 	if (close_main_panel_too) dd->visible = false;
+}
+
+void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, PX_Transform2 transform) {
+	if (!field) return;
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
+
+	px_rs_draw_panel(local_viewport, transform, field->panel, field->fixed_on_screen);
+
+	if (!field->is_typing) {
+		px_rs_render_text(field->placeholder_text, field->pixel_height, px_util_convert_transform_to_anchor(combine_transform2_as_container(lvt, transform), local_viewport.window), (PX_Vector2){.x=2, .y=2}, field->placeholder_color, field->font);
+	}
 }
 
 void event_send_gsignal(PX_Event_GSignal* signal) {

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <time.h>
+#include <dlfcn.h>
 
 #include <window-sys.h>
 #include <err-codes.h>
@@ -28,6 +29,7 @@
 #include <rendering-sys/vulkan.h>
 
 #include <window-sys/backends.h>
+#include <GL/glx.h>
 
 struct keysym_map {
     KeySym sym;
@@ -37,6 +39,9 @@ struct keysym_map {
 struct window {
     Display* display;
     Window window;
+	Colormap colormap;
+
+	GLXFBConfig glx_fb_config;
     GLXContext gl_ctx;
     bool gl_ctx_valid;
     Atom wm_delete;
@@ -48,6 +53,82 @@ struct winarray {
     struct winarray* prev;
     
     int handle;
+};
+
+struct x11_lib {
+    void* x11;
+    void* xrender;
+    void* gl;
+
+    // XLib
+    Display* (*XOpenDisplay)(const char*);
+    int (*XCloseDisplay)(Display*);
+    int (*XPending)(Display*);
+    int (*XNextEvent)(Display*, XEvent*);
+    int (*XSelectInput)(Display*, Window, long);
+    int (*XStoreName)(Display*, Window, const char*);
+    Atom (*XInternAtom)(Display*, const char*, Bool);
+    Status (*XSetWMProtocols)(Display*, Window, Atom*, int);
+    int (*XMapWindow)(Display*, Window);
+    int (*XMapRaised)(Display*, Window);
+    int (*XUnmapWindow)(Display*, Window);
+    int (*XFlush)(Display*);
+    int (*XSync)(Display*, Bool);
+    int (*XDestroyWindow)(Display*, Window);
+    Window (*XCreateSimpleWindow)(Display*, Window, int, int, unsigned int, unsigned int, unsigned int, unsigned long, unsigned long);
+    Window (*XCreateWindow)(Display*, Window, int, int, unsigned int, unsigned int, unsigned int, int, unsigned int, Visual*, unsigned long, XSetWindowAttributes*);
+    Colormap (*XCreateColormap)(Display*, Window, Visual*, int);
+    int (*XFreeColormap)(Display*, Colormap);
+    int (*XFree)(void*);
+    int (*XFreeCursor)(Display*, Cursor);
+    int (*XMoveWindow)(Display*, Window, int, int);
+    int (*XSetWindowBackground)(Display*, Window, unsigned long);
+    int (*XClearWindow)(Display*, Window);
+    Status (*XAllocColor)(Display*, Colormap, XColor*);
+    int (*XSetInputFocus)(Display*, Window, int, Time);
+    int (*XWarpPointer)(Display*, Window, Window, int, int, unsigned int, unsigned int, int, int);
+    int (*XGrabPointer)(Display*, Window, Bool, unsigned int, int, int, Window, Cursor, Time);
+    int (*XUngrabPointer)(Display*, Time);
+    Pixmap (*XCreateBitmapFromData)(Display*, Drawable, const char*, unsigned int, unsigned int);
+    Cursor (*XCreatePixmapCursor)(Display*, Pixmap, Pixmap, XColor*, XColor*, unsigned int, unsigned int);
+    int (*XFreePixmap)(Display*, Pixmap);
+    int (*XSendEvent)(Display*, Window, Bool, long, XEvent*);
+    Status (*XGetWindowAttributes)(Display*, Window, XWindowAttributes*);
+    Status (*XMatchVisualInfo)(Display*, int, int, int, XVisualInfo*);
+    int (*XChangeProperty)(Display*, Window, Atom, Atom, int, int, const unsigned char*, int);
+    Pixmap (*XCreatePixmap)(Display*, Drawable, unsigned int, unsigned int, unsigned int);
+    GC (*XCreateGC)(Display*, Drawable, unsigned long, XGCValues*);
+    int (*XSetForeground)(Display*, GC, unsigned long);
+    int (*XFillRectangle)(Display*, Drawable, GC, int, int, unsigned int, unsigned int);
+    XImage* (*XCreateImage)(Display*, Visual*, unsigned int, int, int, char*, unsigned int, unsigned int, int, int);
+    int (*XPutImage)(Display*, Drawable, GC, XImage*, int, int, int, int, unsigned int, unsigned int);
+    int (*XFreeGC)(Display*, GC);
+    int (*XDestroyImage)(XImage*);
+
+    // XKB
+    Bool (*XkbSetDetectableAutoRepeat)(Display*, Bool, Bool*);
+    KeySym (*XkbKeycodeToKeysym)(Display*, KeyCode, int, int);
+
+    // GLX
+    const char* (*glXQueryExtensionsString)(Display*, int);
+    GLXFBConfig* (*glXChooseFBConfig)(Display*, int, const int*, int*);
+    XVisualInfo* (*glXGetVisualFromFBConfig)(Display*, GLXFBConfig);
+    __GLXextFuncPtr (*glXGetProcAddressARB)(const GLubyte*);
+    Bool (*glXMakeCurrent)(Display*, GLXDrawable, GLXContext);
+    void (*glXDestroyContext)(Display*, GLXContext);
+    GLXDrawable (*glXGetCurrentDrawable)(void);
+    void (*glXSwapBuffers)(Display*, GLXDrawable);
+
+    // GLX Extensions
+    GLXContext (*glXCreateContextAttribsARB)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
+    void (*glXSwapIntervalEXT)(Display*, GLXDrawable, int);
+
+    // XRender
+    XRenderPictFormat* (*XRenderFindVisualFormat)(Display*, _Xconst Visual*);
+    Picture (*XRenderCreatePicture)(Display*, Drawable, XRenderPictFormat*, unsigned long, const XRenderPictureAttributes*);
+    XRenderPictFormat* (*XRenderFindStandardFormat)(Display*, int);
+    void (*XRenderComposite)(Display*, int, Picture, Picture, Picture, int, int, int, int, int, int, unsigned int, unsigned int);
+    void (*XRenderFreePicture)(Display*, Picture);
 };
 
 static const struct keysym_map g_keysym_map[] = {
@@ -164,6 +245,7 @@ static const struct keysym_map g_keysym_map[] = {
     { XK_slash, EKeycode_Slash },
 };
 
+static struct x11_lib g_xlib = {0};
 static struct winarray* g_windows = NULL;
 static Display* g_display = NULL;
 static int g_screen = 0;
@@ -175,7 +257,9 @@ static const char* g_vk_instance_extensions[] = {
 };
 
 static int glx_is_ext_supported(Display *dpy, int screen, const char *extName) {
-    const char *exts = glXQueryExtensionsString(dpy, screen);
+	if (!g_xlib.gl || !g_xlib.glXQueryExtensionsString) return 0;
+
+    const char *exts = g_xlib.glXQueryExtensionsString(dpy, screen);
     if (exts) {
         return (strstr(exts, extName) != NULL);
     }
@@ -260,30 +344,27 @@ static void remove_window(int handle) {
 }
 
 static void destroy_all_windows(void) {
-    if (!g_windows)
-        return;
+    struct winarray* node = g_windows;
 
-    struct winarray* nxt = g_windows;
-    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
-        if (nxt->win) {
-            if (nxt->win->gl_ctx_valid)
-                glXDestroyContext(nxt->win->display, nxt->win->gl_ctx);
-            XDestroyWindow(nxt->win->display, nxt->win->window);
-            free(nxt->win);
+    while (node) {
+        struct winarray* next = node->next;
+
+        if (node->win) {
+            if (node->win->gl_ctx_valid) {
+                g_xlib.glXMakeCurrent(node->win->display, None, NULL);
+                g_xlib.glXDestroyContext(node->win->display, node->win->gl_ctx);
+            }
+			g_xlib.XDestroyWindow(node->win->display, node->win->window);
+			if (node->win->colormap) g_xlib.XFreeColormap(node->win->display, node->win->colormap);
+
+            free(node->win);
         }
-        if (nxt->next)
-            nxt = nxt->next;
-        else
-            break;
+
+        free(node);
+        node = next;
     }
 
-    struct winarray* cur = nxt;
-    for (int i = 0; i < PX_WS_MAX_WINDOWS; i++) {
-        if (nxt->prev)
-            nxt = nxt->prev;
-        free(cur);
-        cur = nxt;
-    }
+    g_windows = NULL;
 }
 
 static PX_EKeycodes x11_map_keysym(KeySym sym) {
@@ -309,65 +390,329 @@ static PX_EKeycodes x11_map_mousesym(unsigned int button) {
     }
 }
 
+static GLXFBConfig x11_choose_fb_config(Display* display) {
+	if (!g_xlib.gl || !g_xlib.glXChooseFBConfig) return 0;
+
+    int fb_attribs[] = {
+        GLX_X_RENDERABLE, True,
+        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+        GLX_RENDER_TYPE, GLX_RGBA_BIT,
+
+        GLX_RED_SIZE, 8,
+        GLX_GREEN_SIZE, 8,
+        GLX_BLUE_SIZE, 8,
+        GLX_ALPHA_SIZE, 8,
+
+        GLX_DEPTH_SIZE, 24,
+
+        GLX_DOUBLEBUFFER, True,
+
+        GLX_SAMPLE_BUFFERS, 1,
+        GLX_SAMPLES, 4,
+
+        None
+    };
+
+    int count = 0;
+    GLXFBConfig* configs = g_xlib.glXChooseFBConfig(display, g_screen, fb_attribs, &count);
+
+    if (!configs || count == 0) {
+        if (configs) g_xlib.XFree(configs);
+        return 0;
+    }
+
+    GLXFBConfig result = configs[0];
+    g_xlib.XFree(configs);
+
+    return result;
+}
+
 static t_err_codes x11_init(void) {
-    g_display = XOpenDisplay(NULL);
-    if (!g_display)
-        return ERR_WS_INIT_FAILED;
+	struct x11_lib xlib = {0};
+	xlib.x11 = dlopen("libX11.so.6", RTLD_LAZY | RTLD_LOCAL);
+	xlib.gl = dlopen("libGL.so.1", RTLD_LAZY | RTLD_LOCAL);
+	xlib.xrender = dlopen("libXrender.so.1", RTLD_LAZY | RTLD_LOCAL);
+
+	#define LOAD_SYM(lib, fn, name) { \
+		*(void**)(&(fn)) = dlsym((lib), (name)); \
+		if (!(fn)) { \
+			fprintf(stderr, "[X11] Failed to find symbol '%s'\n", (name)); \
+			goto failure; \
+		} \
+	}
+
+	#define GLX_LOAD_SYM(fn, name) { \
+		*(void**)(&(fn)) = xlib.glXGetProcAddressARB((const GLubyte*)(name)); \
+		if (!(fn)) { \
+			fprintf(stderr, "[X11] Failed to find GLX Symbol '%s'\n", (name)); \
+			goto failure; \
+		} \
+	}
+
+	#define GLX_LOAD_SYM_NERROR(fn, name) { \
+		*(void**)(&(fn)) = xlib.glXGetProcAddressARB((const GLubyte*)(name)); \
+	}
+
+	// Xlib Symbols
+	LOAD_SYM(xlib.x11, xlib.XOpenDisplay, "XOpenDisplay");
+	LOAD_SYM(xlib.x11, xlib.XCloseDisplay, "XCloseDisplay");
+	LOAD_SYM(xlib.x11, xlib.XPending, "XPending");
+	LOAD_SYM(xlib.x11, xlib.XNextEvent, "XNextEvent");
+	LOAD_SYM(xlib.x11, xlib.XSelectInput, "XSelectInput");
+	LOAD_SYM(xlib.x11, xlib.XStoreName, "XStoreName");
+	LOAD_SYM(xlib.x11, xlib.XInternAtom, "XInternAtom");
+	LOAD_SYM(xlib.x11, xlib.XSetWMProtocols, "XSetWMProtocols");
+	LOAD_SYM(xlib.x11, xlib.XMapWindow, "XMapWindow");
+	LOAD_SYM(xlib.x11, xlib.XMapRaised, "XMapRaised");
+	LOAD_SYM(xlib.x11, xlib.XUnmapWindow, "XUnmapWindow");
+	LOAD_SYM(xlib.x11, xlib.XFlush, "XFlush");
+	LOAD_SYM(xlib.x11, xlib.XSync, "XSync");
+	LOAD_SYM(xlib.x11, xlib.XDestroyWindow, "XDestroyWindow");
+	LOAD_SYM(xlib.x11, xlib.XCreateSimpleWindow, "XCreateSimpleWindow");
+	LOAD_SYM(xlib.x11, xlib.XCreateWindow, "XCreateWindow");
+	LOAD_SYM(xlib.x11, xlib.XCreateColormap, "XCreateColormap");
+	LOAD_SYM(xlib.x11, xlib.XFreeColormap, "XFreeColormap");
+	LOAD_SYM(xlib.x11, xlib.XFree, "XFree");
+	LOAD_SYM(xlib.x11, xlib.XFreeCursor, "XFreeCursor");
+	LOAD_SYM(xlib.x11, xlib.XMoveWindow, "XMoveWindow");
+	LOAD_SYM(xlib.x11, xlib.XSetWindowBackground, "XSetWindowBackground");
+	LOAD_SYM(xlib.x11, xlib.XClearWindow, "XClearWindow");
+	LOAD_SYM(xlib.x11, xlib.XAllocColor, "XAllocColor");
+	LOAD_SYM(xlib.x11, xlib.XSetInputFocus, "XSetInputFocus");
+	LOAD_SYM(xlib.x11, xlib.XWarpPointer, "XWarpPointer");
+	LOAD_SYM(xlib.x11, xlib.XGrabPointer, "XGrabPointer");
+	LOAD_SYM(xlib.x11, xlib.XUngrabPointer, "XUngrabPointer");
+	LOAD_SYM(xlib.x11, xlib.XCreateBitmapFromData, "XCreateBitmapFromData");
+	LOAD_SYM(xlib.x11, xlib.XCreatePixmapCursor, "XCreatePixmapCursor");
+	LOAD_SYM(xlib.x11, xlib.XFreePixmap, "XFreePixmap");
+	LOAD_SYM(xlib.x11, xlib.XSendEvent, "XSendEvent");
+	LOAD_SYM(xlib.x11, xlib.XGetWindowAttributes, "XGetWindowAttributes");
+	LOAD_SYM(xlib.x11, xlib.XMatchVisualInfo, "XMatchVisualInfo");
+	LOAD_SYM(xlib.x11, xlib.XChangeProperty, "XChangeProperty");
+	LOAD_SYM(xlib.x11, xlib.XCreatePixmap, "XCreatePixmap");
+	LOAD_SYM(xlib.x11, xlib.XCreateGC, "XCreateGC");
+	LOAD_SYM(xlib.x11, xlib.XSetForeground, "XSetForeground");
+	LOAD_SYM(xlib.x11, xlib.XFillRectangle, "XFillRectangle");
+	LOAD_SYM(xlib.x11, xlib.XCreateImage, "XCreateImage");
+	LOAD_SYM(xlib.x11, xlib.XPutImage, "XPutImage");
+	LOAD_SYM(xlib.x11, xlib.XFreeGC, "XFreeGC");
+	LOAD_SYM(xlib.x11, xlib.XDestroyImage, "XDestroyImage");
+
+	// XKB Symbols
+	LOAD_SYM(xlib.x11, xlib.XkbSetDetectableAutoRepeat, "XkbSetDetectableAutoRepeat");
+	LOAD_SYM(xlib.x11, xlib.XkbKeycodeToKeysym, "XkbKeycodeToKeysym");
+
+	// GLX Symbols
+	LOAD_SYM(xlib.gl, xlib.glXQueryExtensionsString, "glXQueryExtensionsString");
+	LOAD_SYM(xlib.gl, xlib.glXChooseFBConfig, "glXChooseFBConfig");
+	LOAD_SYM(xlib.gl, xlib.glXGetVisualFromFBConfig, "glXGetVisualFromFBConfig");
+	LOAD_SYM(xlib.gl, xlib.glXGetProcAddressARB, "glXGetProcAddressARB");
+	LOAD_SYM(xlib.gl, xlib.glXMakeCurrent, "glXMakeCurrent");
+	LOAD_SYM(xlib.gl, xlib.glXDestroyContext, "glXDestroyContext");
+	LOAD_SYM(xlib.gl, xlib.glXGetCurrentDrawable, "glXGetCurrentDrawable");
+	LOAD_SYM(xlib.gl, xlib.glXSwapBuffers, "glXSwapBuffers");
+
+	GLX_LOAD_SYM(xlib.glXCreateContextAttribsARB, "glXCreateContextAttribsARB");
+	GLX_LOAD_SYM_NERROR(xlib.glXSwapIntervalEXT, "glXSwapIntervalEXT");
+
+	// XRender
+	LOAD_SYM(xlib.xrender, xlib.XRenderFindVisualFormat, "XRenderFindVisualFormat");
+	LOAD_SYM(xlib.xrender, xlib.XRenderCreatePicture, "XRenderCreatePicture");
+	LOAD_SYM(xlib.xrender, xlib.XRenderFindStandardFormat, "XRenderFindStandardFormat");
+	LOAD_SYM(xlib.xrender, xlib.XRenderComposite, "XRenderComposite");
+	LOAD_SYM(xlib.xrender, xlib.XRenderFreePicture, "XRenderFreePicture");
+
+	#undef LOAD_SYM
+	#undef GLX_LOAD_SYM
+	#undef GLX_LOAD_SYM_NERROR
+
+	g_xlib = xlib;
+
+    g_display = g_xlib.XOpenDisplay(NULL);
+    if (!g_display) goto failure;
+
     g_screen = DefaultScreen(g_display);
-    XkbSetDetectableAutoRepeat(g_display, True, NULL);
+    g_xlib.XkbSetDetectableAutoRepeat(g_display, True, NULL);
     return ERR_SUCCESS;
+
+	failure: {
+		if (g_display && xlib.XCloseDisplay && xlib.x11) {
+			xlib.XCloseDisplay(g_display);
+			g_display = NULL;
+		}
+
+		if (xlib.x11) dlclose(xlib.x11);
+		if (xlib.gl) dlclose(xlib.gl);
+		if (xlib.xrender) dlclose(xlib.xrender);
+
+		memset(&g_xlib, 0, sizeof(struct x11_lib));
+		return ERR_WS_INIT_FAILED;
+	}
 }
 
 static void x11_shutdown(void) {
-    if (g_windows)
-        destroy_all_windows();
+    if (g_windows) destroy_all_windows();
 
     if (g_display) {
-        XCloseDisplay(g_display);
+        g_xlib.XCloseDisplay(g_display);
         g_display = NULL;
     }
+
+	if (g_xlib.x11) dlclose(g_xlib.x11);
+	if (g_xlib.gl) dlclose(g_xlib.gl);
+	if (g_xlib.xrender) dlclose(g_xlib.xrender);
+	memset(&g_xlib, 0, sizeof(struct x11_lib));
 }
 
 static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
-    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (!g_display || !g_xlib.x11) return ERR_WS_UNINITIALIZED;
+
+	if (!win) return ERR_INVALID_ARGUMENTS;
     win->handle = -1;
 	win->gpu_backend_api = gpu_backend_api;
 
-    struct window* iwin = (struct window*)malloc(sizeof(struct window));
+    struct window* iwin = (struct window*)calloc(1, sizeof(struct window));
     if (!iwin) return ERR_ALLOC_FAILED;
 
     iwin->display = g_display;
     Window root = RootWindow(g_display, g_screen);
-    iwin->window = XCreateSimpleWindow(
-        g_display,
-        root,
-        0, 0,
-        win->width, win->height,
-        1,
-        BlackPixel(g_display, g_screen),
-        WhitePixel(g_display, g_screen)
-    );
 
-    XStoreName(g_display, iwin->window, win->title ? win->title : "Pheonix Engine - Unknown Window");
-    iwin->wm_delete = XInternAtom(g_display, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(g_display, iwin->window, &iwin->wm_delete, 1);
-
-    XSelectInput(
-        g_display,
-        iwin->window,
-        KeyPressMask |
+	long event_mask = (
+		KeyPressMask |
         KeyReleaseMask |
         ButtonPressMask |
         ButtonReleaseMask |
         PointerMotionMask |
         StructureNotifyMask |
         ExposureMask
-    );
+	);
 
-    XMapRaised(iwin->display, iwin->window); 
-    XFlush(iwin->display);
+	switch (gpu_backend_api) {
+		case PX_RS_GPU_BACKEND_OPENGL: {
+			if (!g_xlib.gl || !g_xlib.glXGetVisualFromFBConfig) {
+				free(iwin);
+				return ERR_WS_UNINITIALIZED;
+			}
 
-    win->handle = append_window(iwin);
+			GLXFBConfig config = x11_choose_fb_config(g_display);
+			if (!config) {
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+			iwin->glx_fb_config = config;
+
+			XVisualInfo* visual = g_xlib.glXGetVisualFromFBConfig(g_display, config);
+			if (!visual) {
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+
+			Colormap colormap = g_xlib.XCreateColormap(g_display, root, visual->visual, AllocNone);
+			if (!colormap) {
+				g_xlib.XFree(visual);
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+			iwin->colormap = colormap;
+
+			XSetWindowAttributes attrs = {
+				.colormap = colormap,
+				.border_pixel = BlackPixel(g_display, g_screen),
+				.background_pixel = WhitePixel(g_display, g_screen),
+				.event_mask = event_mask
+			};
+
+			iwin->window = g_xlib.XCreateWindow(
+				g_display,
+				root,
+				0, 0,
+				win->width,
+				win->height,
+				0,
+				visual->depth,
+				InputOutput,
+				visual->visual,
+				CWColormap | CWBorderPixel | CWBackPixel | CWEventMask,
+				&attrs
+			);
+
+			if (!iwin->window) {
+				g_xlib.XFreeColormap(g_display, iwin->colormap);
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+
+			g_xlib.XFree(visual);
+			break;
+		}
+
+		case PX_RS_GPU_BACKEND_VULKAN: {
+			Visual* visual = DefaultVisual(g_display, g_screen);
+			if (!visual) {
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+
+			Colormap colormap = g_xlib.XCreateColormap(g_display, root, visual, AllocNone);
+			if (!colormap) {
+    			free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+			iwin->colormap = colormap;
+
+			XSetWindowAttributes attrs = {
+				.colormap = colormap,
+				.border_pixel = BlackPixel(g_display, g_screen),
+				.background_pixel = WhitePixel(g_display, g_screen),
+				.event_mask = event_mask
+			};
+
+			iwin->window = g_xlib.XCreateWindow(
+				g_display,
+				root,
+				0, 0,
+				win->width,
+				win->height,
+				0,
+				DefaultDepth(g_display, g_screen),
+				InputOutput,
+				visual,
+				CWColormap | CWBorderPixel | CWBackPixel | CWEventMask,
+				&attrs
+			);
+
+			if (!iwin->window) {
+				g_xlib.XFreeColormap(g_display, iwin->colormap);
+				free(iwin);
+				return ERR_WS_WINDOW_CREATION_FAILED;
+			}
+			break;
+		}
+		
+		default: {
+			free(iwin);
+			return ERR_WS_INVALID_GPU_BACKEND;
+		}
+	}
+
+    g_xlib.XStoreName(g_display, iwin->window, win->title ? win->title : "Pheonix Engine - Unknown Window");
+    iwin->wm_delete = g_xlib.XInternAtom(g_display, "WM_DELETE_WINDOW", False);
+    g_xlib.XSetWMProtocols(g_display, iwin->window, &iwin->wm_delete, 1);
+
+    g_xlib.XSelectInput(g_display, iwin->window, event_mask);
+
+    g_xlib.XMapRaised(iwin->display, iwin->window); 
+    g_xlib.XFlush(iwin->display);
+
+	int handle = append_window(iwin);
+	if (handle < 0) {
+		g_xlib.XDestroyWindow(iwin->display, iwin->window);
+		if (iwin->colormap) g_xlib.XFreeColormap(iwin->display, iwin->colormap);
+		free(iwin);
+		return ERR_ALLOC_FAILED;
+	}
+	win->handle = handle;
+
     return ERR_SUCCESS;
 }
 
@@ -378,11 +723,20 @@ static void x11_destroy(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return;
 
-    if (iwin->gl_ctx_valid)
-        glXDestroyContext(iwin->display, iwin->gl_ctx);
-    XDestroyWindow(iwin->display, iwin->window);
-    free(iwin);
+	if (win->ctx_handle) {
+		PX_WContext* ctx = (PX_WContext*)(uintptr_t)win->ctx_handle;
+		free(ctx);
+		win->ctx_handle = 0;
+	}
 
+	if (g_xlib.gl && g_xlib.glXDestroyContext) {
+		g_xlib.glXMakeCurrent(iwin->display, None, NULL);
+		if (iwin->gl_ctx_valid) g_xlib.glXDestroyContext(iwin->display, iwin->gl_ctx);
+	}
+	g_xlib.XDestroyWindow(iwin->display, iwin->window);\
+	if (iwin->colormap) g_xlib.XFreeColormap(iwin->display, iwin->colormap);
+
+    free(iwin);
     remove_window(win->handle);
     
     win->handle = -1;
@@ -395,8 +749,8 @@ static t_err_codes x11_show(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    XMapWindow(iwin->display, iwin->window);
-    XFlush(iwin->display);
+    g_xlib.XMapWindow(iwin->display, iwin->window);
+    g_xlib.XFlush(iwin->display);
     return ERR_SUCCESS;
 }
 
@@ -407,8 +761,8 @@ static t_err_codes x11_hide(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    XUnmapWindow(iwin->display, iwin->window);
-    XFlush(iwin->display);
+    g_xlib.XUnmapWindow(iwin->display, iwin->window);
+    g_xlib.XFlush(iwin->display);
     return ERR_SUCCESS;
 }
 
@@ -419,9 +773,9 @@ static t_err_codes x11_poll_events(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    while (XPending(iwin->display)) {
+    while (g_xlib.XPending(iwin->display)) {
         XEvent ev;
-        XNextEvent(iwin->display, &ev);
+        g_xlib.XNextEvent(iwin->display, &ev);
 
         PX_WEvent we = {0};
         KeySym sym;
@@ -432,7 +786,7 @@ static t_err_codes x11_poll_events(PX_Window* win) {
                 break;
 
             case MapNotify:
-                XSetInputFocus(iwin->display, iwin->window, RevertToParent, CurrentTime);
+                g_xlib.XSetInputFocus(iwin->display, iwin->window, RevertToParent, CurrentTime);
                 break;
 
             case ConfigureNotify:
@@ -444,7 +798,7 @@ static t_err_codes x11_poll_events(PX_Window* win) {
             case KeyPress:
                 we.type = PX_WE_KEYDOWN;
 
-                sym = XkbKeycodeToKeysym(
+                sym = g_xlib.XkbKeycodeToKeysym(
                     ev.xkey.display,
                     ev.xkey.keycode,
                     0,
@@ -457,7 +811,7 @@ static t_err_codes x11_poll_events(PX_Window* win) {
             case KeyRelease:
                 we.type = PX_WE_KEYUP;
 
-                sym = XkbKeycodeToKeysym(
+                sym = g_xlib.XkbKeycodeToKeysym(
                     ev.xkey.display,
                     ev.xkey.keycode,
                     0,
@@ -543,13 +897,13 @@ static t_err_codes x11_engine_splash(void) {
     Window root = RootWindow(g_display, g_screen);
 
     XVisualInfo vinfo;
-    if (!XMatchVisualInfo(g_display, g_screen, 32, TrueColor, &vinfo)) {
+    if (!g_xlib.XMatchVisualInfo(g_display, g_screen, 32, TrueColor, &vinfo)) {
         free(logo_data);
         return ERR_WS_INIT_FAILED;
     }
 
     XSetWindowAttributes attrs = {0};
-    attrs.colormap = XCreateColormap(
+    attrs.colormap = g_xlib.XCreateColormap(
         g_display,
         root,
         vinfo.visual,
@@ -558,7 +912,7 @@ static t_err_codes x11_engine_splash(void) {
     attrs.border_pixel = 0;
     attrs.background_pixel = 0;
 
-    Window win = XCreateWindow(
+    Window win = g_xlib.XCreateWindow(
         g_display, root,
         0, 0,
         600, 300,
@@ -568,13 +922,13 @@ static t_err_codes x11_engine_splash(void) {
         &attrs
     );
 
-    Atom wm_window_type = XInternAtom(g_display, "_NET_WM_WINDOW_TYPE", False);
-    Atom wm_window_type_splash = XInternAtom(g_display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
-    XChangeProperty(g_display, win, wm_window_type, XA_ATOM, 32, PropModeReplace, (unsigned char*)&wm_window_type_splash, 1);
-    Atom wm_state = XInternAtom(g_display, "_NET_WM_STATE", False);
-    Atom wm_state_above = XInternAtom(g_display, "_NET_WM_STATE_ABOVE", False);
-    Atom wm_state_skip_taskbar = XInternAtom(g_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
-    Atom wm_state_skip_pager = XInternAtom(g_display, "_NET_WM_STATE_SKIP_PAGER", False);
+    Atom wm_window_type = g_xlib.XInternAtom(g_display, "_NET_WM_WINDOW_TYPE", False);
+    Atom wm_window_type_splash = g_xlib.XInternAtom(g_display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    g_xlib.XChangeProperty(g_display, win, wm_window_type, XA_ATOM, 32, PropModeReplace, (unsigned char*)&wm_window_type_splash, 1);
+    Atom wm_state = g_xlib.XInternAtom(g_display, "_NET_WM_STATE", False);
+    Atom wm_state_above = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_ABOVE", False);
+    Atom wm_state_skip_taskbar = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    Atom wm_state_skip_pager = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_SKIP_PAGER", False);
 
     Atom states[] = {
         wm_state_above,
@@ -582,16 +936,15 @@ static t_err_codes x11_engine_splash(void) {
         wm_state_skip_pager
     };
 
-    XChangeProperty(g_display, win, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
+    g_xlib.XChangeProperty(g_display, win, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
 
-    XSelectInput(g_display, win, ExposureMask | KeyPressMask | StructureNotifyMask);
-    XMapRaised(g_display, win);
+    g_xlib.XSelectInput(g_display, win, ExposureMask | KeyPressMask | StructureNotifyMask);
+    g_xlib.XMapRaised(g_display, win);
 
     for (;;) {
         XEvent e;
-        XNextEvent(g_display, &e);
-        if (e.type == MapNotify && e.xmap.window == win)
-            break;
+        g_xlib.XNextEvent(g_display, &e);
+        if (e.type == MapNotify && e.xmap.window == win) break;
     }
  
     int screen_w = DisplayWidth(g_display, g_screen);
@@ -600,40 +953,40 @@ static t_err_codes x11_engine_splash(void) {
     int win_w = logo_w;
     int win_h = logo_h;
 
-    XMoveWindow(g_display, win, (screen_w - win_w) / 2, (screen_h - win_h) / 2);
+    g_xlib.XMoveWindow(g_display, win, (screen_w - win_w) / 2, (screen_h - win_h) / 2);
 
     Picture win_pic, img_pic;
 
-    XRenderPictFormat* win_fmt = XRenderFindVisualFormat(g_display, vinfo.visual);
-    win_pic = XRenderCreatePicture(g_display, win, win_fmt, 0, NULL);
+    XRenderPictFormat* win_fmt = g_xlib.XRenderFindVisualFormat(g_display, vinfo.visual);
+    win_pic = g_xlib.XRenderCreatePicture(g_display, win, win_fmt, 0, NULL);
 
-    Pixmap bg_pix = XCreatePixmap(g_display, win, 600, 300, vinfo.depth);
-    GC bg_gc = XCreateGC(g_display, bg_pix, 0, NULL);
-    XSetForeground(g_display, bg_gc, BlackPixel(g_display, g_screen));
-    XFillRectangle(g_display, bg_pix, bg_gc, 0, 0, 600, 300);
+    Pixmap bg_pix = g_xlib.XCreatePixmap(g_display, win, 600, 300, vinfo.depth);
+    GC bg_gc = g_xlib.XCreateGC(g_display, bg_pix, 0, NULL);
+    g_xlib.XSetForeground(g_display, bg_gc, BlackPixel(g_display, g_screen));
+    g_xlib.XFillRectangle(g_display, bg_pix, bg_gc, 0, 0, 600, 300);
 
-    Picture bg_pic = XRenderCreatePicture(g_display, bg_pix, XRenderFindVisualFormat(g_display, vinfo.visual), 0, NULL);
-    XRenderComposite(g_display, PictOpSrc, bg_pic, None, win_pic, 0, 0, 0, 0, 0, 0, 600, 300);
+    Picture bg_pic = g_xlib.XRenderCreatePicture(g_display, bg_pix, g_xlib.XRenderFindVisualFormat(g_display, vinfo.visual), 0, NULL);
+    g_xlib.XRenderComposite(g_display, PictOpSrc, bg_pic, None, win_pic, 0, 0, 0, 0, 0, 0, 600, 300);
 
-    XRenderPictFormat* pix_fmt = XRenderFindStandardFormat(g_display, PictStandardARGB32);
-    Pixmap pix = XCreatePixmap(g_display, win, logo_w, logo_h, 32);
+    XRenderPictFormat* pix_fmt = g_xlib.XRenderFindStandardFormat(g_display, PictStandardARGB32);
+    Pixmap pix = g_xlib.XCreatePixmap(g_display, win, logo_w, logo_h, 32);
 
-    GC gc = XCreateGC(g_display, pix, 0, NULL);
-    XImage* ximage = XCreateImage(
+    GC gc = g_xlib.XCreateGC(g_display, pix, 0, NULL);
+    XImage* ximage = g_xlib.XCreateImage(
         g_display, vinfo.visual,
         32, ZPixmap, 0,
         (char*)logo_data, logo_w, logo_h, 32, logo_w * 4
     );
-    XPutImage(g_display, pix, gc, ximage, 0, 0, 0, 0, logo_w, logo_h);
+    g_xlib.XPutImage(g_display, pix, gc, ximage, 0, 0, 0, 0, logo_w, logo_h);
     
-    img_pic = XRenderCreatePicture(g_display, pix, pix_fmt, 0, NULL);
+    img_pic = g_xlib.XRenderCreatePicture(g_display, pix, pix_fmt, 0, NULL);
  
     int logo_scaled_w = logo_w / 2;
     int logo_scaled_h = logo_h / 2;
     int dest_x = screen_w - logo_scaled_w - 50; // right-center offset
     int dest_y = (screen_h - logo_scaled_h) / 2;
 
-    XRenderComposite(
+    g_xlib.XRenderComposite(
         g_display, PictOpOver,
         img_pic, None,
         win_pic,
@@ -643,14 +996,14 @@ static t_err_codes x11_engine_splash(void) {
         logo_scaled_w, logo_scaled_h
     );
 
-    XFlush(g_display);
+    g_xlib.XFlush(g_display);
 
     struct timespec start, now;
     clock_gettime(CLOCK_MONOTONIC, &start);
     while (1) {
-        while (XPending(g_display)) {
+        while (g_xlib.XPending(g_display)) {
             XEvent e;
-            XNextEvent(g_display, &e);
+            g_xlib.XNextEvent(g_display, &e);
         }
 
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -661,17 +1014,17 @@ static t_err_codes x11_engine_splash(void) {
         nanosleep(&(struct timespec){0, 1000000}, NULL);
     }
 
-    XDestroyWindow(g_display, win);
-    XSync(g_display, False);
+    g_xlib.XDestroyWindow(g_display, win);
+    g_xlib.XSync(g_display, False);
 
-    if (img_pic) XRenderFreePicture(g_display, img_pic);
-    if (win_pic) XRenderFreePicture(g_display, win_pic);
-    XFreeColormap(g_display, attrs.colormap);
-    XFreePixmap(g_display, pix);
-    XFreeGC(g_display, gc);
-    if (bg_pic) XRenderFreePicture(g_display, bg_pic);
-    XFreePixmap(g_display, bg_pix);
-    XFreeGC(g_display, bg_gc);
+    if (img_pic) g_xlib.XRenderFreePicture(g_display, img_pic);
+    if (win_pic) g_xlib.XRenderFreePicture(g_display, win_pic);
+    g_xlib.XFreeColormap(g_display, attrs.colormap);
+    g_xlib.XFreePixmap(g_display, pix);
+    g_xlib.XFreeGC(g_display, gc);
+    if (bg_pic) g_xlib.XRenderFreePicture(g_display, bg_pic);
+    g_xlib.XFreePixmap(g_display, bg_pix);
+    g_xlib.XFreeGC(g_display, bg_gc);
 
     ximage->data = NULL;
     XDestroyImage(ximage);
@@ -688,20 +1041,21 @@ static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
     struct window* iwin = get_window(win->handle);
     if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
-    Colormap cmap = DefaultColormap(iwin->display, g_screen);
+    Colormap cmap = iwin->colormap;
     XColor xcolor;
     xcolor.pixel = 0;
     xcolor.red = ((design->bg_color >> 16) & 0xFF) * 257;
     xcolor.green = ((design->bg_color >> 8) & 0xFF) * 257;
     xcolor.blue = (design->bg_color & 0xFF) * 257;
-    XAllocColor(iwin->display, cmap, &xcolor);
-    XSetWindowBackground(iwin->display, iwin->window, xcolor.pixel);
-    XClearWindow(iwin->display, iwin->window);
+    g_xlib.XAllocColor(iwin->display, cmap, &xcolor);
+    g_xlib.XSetWindowBackground(iwin->display, iwin->window, xcolor.pixel);
+    g_xlib.XClearWindow(iwin->display, iwin->window);
 
     return ERR_SUCCESS;
 }
 
 static t_err_codes x11_create_ctx(PX_Window* win) {
+	if (!g_xlib.gl || !g_xlib.glXCreateContextAttribsARB || !g_xlib.glXMakeCurrent || !g_xlib.glXDestroyContext) return ERR_WS_UNINITIALIZED;
     if (!win) return ERR_INVALID_ARGUMENTS;
 	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 
@@ -714,49 +1068,41 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 		default: return ERR_WS_INVALID_GPU_BACKEND;
 	}
 
-	PX_WContext* ctx = (PX_WContext*)malloc(sizeof(PX_WContext));
+	PX_WContext* ctx = (PX_WContext*)calloc(1, sizeof(PX_WContext));
 	if (!ctx) return ERR_ALLOC_FAILED;
-	win->ctx_handle = (uint64_t)((uintptr_t)ctx);
 
 	ctx->iwin = (void*)iwin;
 	ctx->backend = win->gpu_backend_api;
 
 	switch (win->gpu_backend_api) {
 		case PX_RS_GPU_BACKEND_OPENGL: {
-			int attr[] = {
-				GLX_RGBA,
-				GLX_DOUBLEBUFFER,
-				GLX_RED_SIZE, 8,
-				GLX_GREEN_SIZE, 8,
-				GLX_BLUE_SIZE, 8,
-				GLX_DEPTH_SIZE, 24,
-				GLX_SAMPLE_BUFFERS, 1,
-				GLX_SAMPLES, 4, // Request 4x MSAA
+			if (!iwin->glx_fb_config) {
+				free(ctx);
+				return ERR_WS_CONTEXT_CREATION_FAILED;
+			}
+
+			#ifdef PX_RS_OPENGL_PROFILE_COMPATIBILITY
+				#define GL_PROFILE GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
+			#else
+				#define GL_PROFILE GLX_CONTEXT_CORE_PROFILE_BIT_ARB
+			#endif
+			int ctx_attribs[] = {
+				GLX_CONTEXT_MAJOR_VERSION_ARB, PX_RS_OPENGL_MAJ_VERSION,
+				GLX_CONTEXT_MINOR_VERSION_ARB, PX_RS_OPENGL_MIN_VERSION,
+				GLX_CONTEXT_PROFILE_MASK_ARB, GL_PROFILE,
 				None
 			};
+			#undef GL_PROFILE
 
-			XVisualInfo* visual = glXChooseVisual(iwin->display, 0, attr);
-			if (!visual) {
-				free(ctx);
-				win->ctx_handle = 0;
-				return ERR_WS_CONTEXT_CREATION_FAILED;
-			}
-
-			GLXContext gl_ctx = glXCreateContext(iwin->display, visual, 0, True);
+			GLXContext gl_ctx = g_xlib.glXCreateContextAttribsARB(iwin->display, iwin->glx_fb_config, 0, True, ctx_attribs);
 			if (!gl_ctx) {
-				XFree(visual);
-
 				free(ctx);
-				win->ctx_handle = 0;
 				return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
-			if (!glXMakeCurrent(iwin->display, iwin->window, gl_ctx)) {
-				glXDestroyContext(iwin->display, gl_ctx);
-                XFree(visual);
-
+			if (!g_xlib.glXMakeCurrent(iwin->display, iwin->window, gl_ctx)) {
+				g_xlib.glXDestroyContext(iwin->display, gl_ctx);
 				free(ctx);
-				win->ctx_handle = 0;
                 return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
@@ -764,11 +1110,9 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 			iwin->gl_ctx = gl_ctx;
 
 			if (glx_is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control")) {
-				PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = (PFNGLXSWAPINTERVALEXTPROC)glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
-				if (glXSwapIntervalEXT) glXSwapIntervalEXT(iwin->display, glXGetCurrentDrawable(), win->vsync_off ? 0 : 1);
+				if (g_xlib.glXSwapIntervalEXT) g_xlib.glXSwapIntervalEXT(iwin->display, g_xlib.glXGetCurrentDrawable(), win->vsync_off ? 0 : 1);
 			}
 
-			XFree(visual);
 			ctx->opengl.ictx = (void*)(&iwin->gl_ctx);
 			break;
 		}
@@ -781,11 +1125,11 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 
 		default: { // Can't occur but good safety
 			free(ctx);
-			win->ctx_handle = 0;
 			return ERR_WS_INVALID_GPU_BACKEND;
 		}
 	}
 
+	win->ctx_handle = (uint64_t)((uintptr_t)ctx);
     return ERR_SUCCESS;
 }
 
@@ -801,6 +1145,7 @@ static t_err_codes x11_get_ctx(PX_Window* win, PX_WContext* out) {
 }
 
 static t_err_codes x11_swap_buffers(PX_Window* win) {
+	if (!g_xlib.gl || !g_xlib.glXSwapBuffers) return ERR_WS_UNINITIALIZED;
     if (!win) return ERR_INVALID_ARGUMENTS;
 	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 	if (win->gpu_backend_api != PX_RS_GPU_BACKEND_OPENGL) return ERR_SUCCESS; // Control of buffer swap is with X11 only in OpenGL
@@ -808,7 +1153,7 @@ static t_err_codes x11_swap_buffers(PX_Window* win) {
     struct window* iwin = get_window(win->handle);
     if (!iwin || !iwin->gl_ctx_valid) return ERR_WS_NO_WINDOW_FOUND;
 
-    glXSwapBuffers(iwin->display, iwin->window);
+    g_xlib.glXSwapBuffers(iwin->display, iwin->window);
 
     return ERR_SUCCESS;
 }
@@ -834,19 +1179,20 @@ static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {
         Pixmap blank;
         XColor dummy;
         char data[1] = {0};
-        blank = XCreateBitmapFromData(iwin->display, iwin->window, data, 1, 1);
-        Cursor invisible_cursor = XCreatePixmapCursor(iwin->display, blank, blank, &dummy, &dummy, 0, 0);
+        blank = g_xlib.XCreateBitmapFromData(iwin->display, iwin->window, data, 1, 1);
+        Cursor invisible_cursor = g_xlib.XCreatePixmapCursor(iwin->display, blank, blank, &dummy, &dummy, 0, 0);
 
-        XGrabPointer(
+        g_xlib.XGrabPointer(
             iwin->display, iwin->window, True, 
             PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
             GrabModeAsync, GrabModeAsync, 
             iwin->window, invisible_cursor, CurrentTime
         );
-        XFreePixmap(iwin->display, blank);
+        g_xlib.XFreePixmap(iwin->display, blank);
+		g_xlib.XFreeCursor(iwin->display, invisible_cursor);
     } else {
-        XUngrabPointer(iwin->display, CurrentTime);
-        XFlush(iwin->display);
+        g_xlib.XUngrabPointer(iwin->display, CurrentTime);
+        g_xlib.XFlush(iwin->display);
     }
     return ERR_SUCCESS;
 }
@@ -857,7 +1203,7 @@ static t_err_codes x11_set_mouse_pos(PX_Window* win, PX_Vector2 pos) {
 
     struct window* iwin = get_window(win->handle);
 	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
-    XWarpPointer(iwin->display, None, iwin->window, 0, 0, 0, 0, pos.x, pos.y);
+    g_xlib.XWarpPointer(iwin->display, None, iwin->window, 0, 0, 0, 0, pos.x, pos.y);
     return ERR_SUCCESS;
 }
 
@@ -869,8 +1215,8 @@ static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
 	if (!iwin) return ERR_WS_NO_WINDOW_FOUND;
 
 	XEvent xev;
-	Atom wm_state = XInternAtom(iwin->display, "_NET_WM_STATE", False);
-	Atom wm_fs = XInternAtom(iwin->display, "_NET_WM_STATE_FULLSCREEN", False);
+	Atom wm_state = g_xlib.XInternAtom(iwin->display, "_NET_WM_STATE", False);
+	Atom wm_fs = g_xlib.XInternAtom(iwin->display, "_NET_WM_STATE_FULLSCREEN", False);
 
 	memset(&xev, 0, sizeof(xev));
     xev.type = ClientMessage;
@@ -881,7 +1227,7 @@ static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
     xev.xclient.data.l[1] = wm_fs;
     xev.xclient.data.l[2] = 0;
 
-    XSendEvent(iwin->display, DefaultRootWindow(iwin->display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+    g_xlib.XSendEvent(iwin->display, DefaultRootWindow(iwin->display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
 
 	return ERR_SUCCESS;
 }
