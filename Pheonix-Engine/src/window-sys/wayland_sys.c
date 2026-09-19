@@ -1,3 +1,5 @@
+#ifdef __linux__
+
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdlib.h>
@@ -237,7 +239,7 @@ static struct window* get_window(int64_t handle) {
 }
 
 __attribute__((unused))
-static void remove_window(int handle) {
+static void remove_window(int64_t handle) {
     if (!g_windows) return;
 
     struct winarray* nxt = g_windows;
@@ -537,3 +539,5 @@ static t_err_codes wayland_create(PX_Window* win, PX_GPU_Backend gpu_backend_api
 
 	return ERR_SUCCESS;
 }
+
+#endif

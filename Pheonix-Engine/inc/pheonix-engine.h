@@ -22,3 +22,9 @@ void enginef_deinit_3drenderer_main_scene(void);
 void enginef_deinit_2drenderer_main_scene(void);
 void enginef_init_3drenderer_main_scene(void);
 void enginef_init_2drenderer_main_scene(void);
+
+#ifdef _WIN32
+	#include <windows.h>
+
+	extern HINSTANCE g_main_hinstance;
+#endif

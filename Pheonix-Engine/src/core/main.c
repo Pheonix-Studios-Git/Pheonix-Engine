@@ -12,8 +12,27 @@
 #include <rendering-sys.h>
 #include <font.h>
 #include <editor.h>
-#include <event.h>
+#include <event-sys.h>
 #include <rendering-sys/loader.h>
+
+// Windows
+#ifdef _WIN32
+	#include <windows.h>
+
+	int main(int argc, char** argv);
+
+	HINSTANCE g_main_hinstance;
+	int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+		(void)hPrevInstance;
+		(void)lpCmdLine;
+		(void)nShowCmd;
+
+		g_main_hinstance = hInstance;
+
+		char* cmd = "pheonix-engine";
+		return main(1, &cmd); // TODO: Add Command Line Parsing for Windows
+	}
+#endif
 
 typedef struct {
     bool valid;

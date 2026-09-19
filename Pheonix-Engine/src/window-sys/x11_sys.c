@@ -1,3 +1,5 @@
+#ifdef __linux__
+
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdlib.h>
@@ -256,14 +258,13 @@ static const char* g_vk_instance_extensions[] = {
 	VK_KHR_XLIB_SURFACE_EXTENSION_NAME
 };
 
-static int glx_is_ext_supported(Display *dpy, int screen, const char *extName) {
-	if (!g_xlib.gl || !g_xlib.glXQueryExtensionsString) return 0;
+static int glx_is_ext_supported(Display* dpy, int screen, const char* extName) {
+	if (!g_xlib.gl || !g_xlib.glXQueryExtensionsString) return -1;
 
-    const char *exts = g_xlib.glXQueryExtensionsString(dpy, screen);
-    if (exts) {
-        return (strstr(exts, extName) != NULL);
-    }
-    return 0;
+    const char* exts = g_xlib.glXQueryExtensionsString(dpy, screen);
+    if (exts) return (strstr(exts, extName) != NULL);
+
+    return -1;
 }
 
 static int append_window(struct window* win) {
@@ -1055,8 +1056,7 @@ static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
 }
 
 static t_err_codes x11_create_ctx(PX_Window* win) {
-	if (!g_xlib.gl || !g_xlib.glXCreateContextAttribsARB || !g_xlib.glXMakeCurrent || !g_xlib.glXDestroyContext) return ERR_WS_UNINITIALIZED;
-    if (!win) return ERR_INVALID_ARGUMENTS;
+	if (!win) return ERR_INVALID_ARGUMENTS;
 	if (win->handle < 0) return ERR_WS_INVALID_WINDOW_HANDLE;
 
     struct window* iwin = get_window(win->handle);
@@ -1076,6 +1076,11 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 
 	switch (win->gpu_backend_api) {
 		case PX_RS_GPU_BACKEND_OPENGL: {
+			if (!g_xlib.gl || !g_xlib.glXCreateContextAttribsARB || !g_xlib.glXMakeCurrent || !g_xlib.glXDestroyContext) {
+				free(ctx);
+				return ERR_WS_UNINITIALIZED;
+			}
+
 			if (!iwin->glx_fb_config) {
 				free(ctx);
 				return ERR_WS_CONTEXT_CREATION_FAILED;
@@ -1109,7 +1114,7 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 			iwin->gl_ctx_valid = true;
 			iwin->gl_ctx = gl_ctx;
 
-			if (glx_is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control")) {
+			if (glx_is_ext_supported(iwin->display, g_screen, "GLX_EXT_swap_control") > 0) {
 				if (g_xlib.glXSwapIntervalEXT) g_xlib.glXSwapIntervalEXT(iwin->display, g_xlib.glXGetCurrentDrawable(), win->vsync_off ? 0 : 1);
 			}
 
@@ -1164,6 +1169,8 @@ static char* x11_open_file_selector_dialog(void) {
     
     size_t sz = strlen(file);
     char* f = (char*)malloc(sz + 1);
+	if (!f) return NULL;
+	
     memcpy(f, file, sz);
     f[sz] = '\0';
     return f;
@@ -1279,3 +1286,4 @@ const t_px_ws_backend px_ws_backend_x11 = {
 	.vk_finish_ctx = x11_vk_finish_ctx
 };
 
+#endif

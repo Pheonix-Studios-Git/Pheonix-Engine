@@ -8,20 +8,27 @@
 #include <window-sys/backends.h>
 #include <err-codes.h>
 
-extern const t_px_ws_backend px_ws_backend_x11;
-extern const t_px_ws_backend px_ws_backend_null;
+#ifdef _WIN32
+	extern const t_px_ws_backend px_ws_backend_win32;
+#endif
+
+#ifdef __linux__
+	extern const t_px_ws_backend px_ws_backend_x11;
+	extern const t_px_ws_backend px_ws_backend_null;
+#endif
 
 static const t_px_ws_backend* g_backend = NULL;
 
 t_err_codes px_ws_init(void) {
     #if defined(__linux__)
         g_backend = &px_ws_backend_x11;
+	#elif defined(_WIN32)
+		g_backend = &px_ws_backend_win32;
     #else
         g_backend = &px_ws_backend_null;
     #endif
 
-    if (!g_backend)
-        return ERR_WS_UNSUPPORTED;
+    if (!g_backend) return ERR_WS_UNSUPPORTED;
 
     return g_backend->init();
 }
@@ -170,3 +177,4 @@ t_err_codes px_ws_vk_finish_ctx(PX_WContext* ctx, VkInstance instance, PFN_vkGet
 
     return g_backend->vk_finish_ctx(ctx, instance, GetInstanceProcAddr);
 }
+
