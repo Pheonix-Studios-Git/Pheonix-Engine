@@ -11,14 +11,14 @@
         "linux"
       ],
       "Path": "Pheonix-Engine/bin/linux/x86_64/pheonix-engine",
-      "Sha256": "2e89f64e10e14b63101face3589197667df9cb235aa0c0adaaf74d08a37fd663",
-      "Size": 1546064
+      "Sha256": "8004d6c8e3232d3f32169d05545dcd7679689311deba68b641f4abbe70a48cd1",
+      "Size": 626528
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-05-25 20:56",
-    "SignatureIdentity": "pheonix-pheonix-engine"
+    "Date": "2026-09-26 00:29",
+    "SignatureIdentity": "pheonix-package-index"
   },
   "Conflicts": [],
   "Dependencies": [],

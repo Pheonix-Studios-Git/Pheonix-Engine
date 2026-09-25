@@ -13,7 +13,7 @@
 
     "Build": {
         "AllowedSigners": "keys/allowed_signers",
-        "SignatureIdentity": "pheonix-pheonix-engine",
+        "SignatureIdentity": "pheonix-package-index",
         "Date": "2026-04-23"
     },
     

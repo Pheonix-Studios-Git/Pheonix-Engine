@@ -4,12 +4,27 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-				"${workspaceFolder}/Pheonix-Engine/inc/**"
+                "${workspaceFolder}/Pheonix-Engine/inc/**"
             ],
             "defines": [],
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "linux-clang-x64",
+            "configurationProvider": "ms-vscode.makefile-tools"
+        },
+        {
+            "name": "Linux-MingW64",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/Pheonix-Engine/inc/**",
+                "/usr/x86_64-w64-mingw32/include",
+				"/usr/include"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "compilerPath": "/usr/bin/x86_64-w64-mingw32-gcc",
+            "intelliSenseMode": "linux-gcc-x64",
             "configurationProvider": "ms-vscode.makefile-tools"
         }
     ],
