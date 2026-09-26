@@ -35,12 +35,19 @@ dirs:
 
 build-linux:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(LINUX_OUT)
-	@make -C Pheonix-Engine BUILD=release
+	@make --no-print-directory -C Pheonix-Engine clean-objects
+	@make --no-print-directory -C Pheonix-Engine BUILD=release
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(LINUX_OUT)
 
 build-windows:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(NFX_WINDOWS_OUT)
-	
+	@make --no-print-directory -C Pheonix-Engine clean-objects
+	@make --no-print-directory -C Pheonix-Engine BUILD=release \
+			CC=x86_64-w64-mingw32-gcc \
+			AR=x86_64-w64-mingw32-ar \
+			PROJECT_EXTENSION=.exe \
+			OS=windows \
+			EXTRA_LDFLAGS="-lopengl32 -luser32 -lgdi32 -lshell32 -lcomdlg32 -lole32"
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(NFX_WINDOWS_OUT)
 
 prepare-json:
@@ -57,12 +64,20 @@ sizes: hashes
 		printf "$(GREEN)==> Linux size: %s\n$(RESET)" $$LINUX_SIZE; \
 		jq '.Binaries[0].Size = '$$LINUX_SIZE'' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
 
+	@WINDOWS_SIZE=$$(stat -c %s $(WINDOWS_OUT)); \
+		printf "$(GREEN)==> Windows size: %s\n$(RESET)" $$WINDOWS_SIZE; \
+		jq '.Binaries[1].Size = '$$WINDOWS_SIZE'' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+
 hashes: prepare-json
 	@printf "$(YELLOW)==> Getting Hashes...\n$(RESET)"
 
 	@LINUX_HASH=$$(sha256sum $(LINUX_OUT) | awk '{print $$1}'); \
 		printf "$(GREEN)==> Linux hash: %s\n$(RESET)" $$LINUX_HASH; \
 		jq '.Binaries[0].Sha256 = "'$$LINUX_HASH'"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+
+	@WIN_HASH=$$(sha256sum $(WINDOWS_OUT) | awk '{print $$1}'); \
+		printf "$(GREEN)==> Windows hash: %s\n$(RESET)" $$WIN_HASH; \
+		jq '.Binaries[1].Sha256 = "'$$WIN_HASH'"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
 
 date:
 	@printf "$(YELLOW)==> Injecting build date...\n$(RESET)"
@@ -75,6 +90,7 @@ zip: dirs build-linux build-windows canonical
 	@zip -r $(ZIP) \
 		nfx.json \
 		$(LINUX_OUT) \
+		$(WINDOWS_OUT) \
 		$(REQUIRED_DIRS) \
 		$(LICENSE) \
 		$(README) \

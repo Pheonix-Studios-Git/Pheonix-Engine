@@ -53,9 +53,10 @@ WARN := -Wall -Wextra -Wno-pedantic -Wstrict-prototypes
 DEFS :=
 INCS := -I$(INC_DIR)
 
-OPT_LEVEL ?= 0
+OPT_LEVEL ?= 3
 TARGET_CPU ?= generic
 EXTRA ?=
+EXTRA_LDFLAGS ?=
 
 CPU_FLAGS :=
 
@@ -64,14 +65,14 @@ ifneq ($(TARGET_CPU),generic)
 endif
 
 CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
-LDFLAGS := $(EXTRA) -lm -lpng -lassimp -ldl
+LDFLAGS := $(EXTRA) -lm -lpng -lassimp -ldl $(EXTRA_LDFLAGS)
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
 OBJ := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
 
 # === Rules ===
-.PHONY: all clean help dirs
+.PHONY: all clean clean-objects help dirs
 
 all: dirs $(TARGET)
 
@@ -91,6 +92,10 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 clean:
 	@echo "Cleaning build artifacts"
 	@rm -rf $(BUILD_DIR) $(BIN_DIR)
+
+clean-objects:
+	@echo "Cleaning object files"
+	@rm -rf $(BUILD_DIR)
 
 help:
 	@echo "Pheonix Engine Build System"
