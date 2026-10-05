@@ -12,6 +12,9 @@
 static PX_EditorState state_raw = {0};
 static PX_EditorState* state = &state_raw;
 
+PX_Event_TextField text_fields[64]; // 64 fields
+size_t text_field_ptr;
+
 static t_err_codes editor_init_state(char* proj_name, PX_EditorMode base_mode) {
     state->editor_version = PX_EDITOR_CUR_VERSION;
 
@@ -308,14 +311,6 @@ static int editor_click_object_3d(PX_Scene_3D* scene, PX_Vector2 mpos, PX_3D_Obj
             mpos.x <= box.x + w &&
             mpos.y <= (int)(box.y + font_size)
         ) {
-            PX_Event_GSignal s = {
-                .type = EVENT_GSIGNAL_UI_SCENE_PANEL_CLICK,
-                .ui_scenepanel_click = (PX_Event_GSignal_UIScenePanelClick){
-                    .clicked_name = object->name,
-                    .obj3d = object
-                }
-            };
-            event_send_gsignal(&s);
             scene->active_object = obj;
             return y;
         }
@@ -380,14 +375,6 @@ static int editor_click_object_2d(PX_Scene_2D* scene, PX_Vector2 mpos, PX_2D_Obj
             mpos.x <= box.x + w &&
             mpos.y <= (int)(box.y + font_size)
         ) {
-            PX_Event_GSignal s = {
-                .type = EVENT_GSIGNAL_UI_SCENE_PANEL_CLICK,
-                .ui_scenepanel_click = (PX_Event_GSignal_UIScenePanelClick){
-                    .clicked_name = object->name,
-                    .obj2d = object
-                }
-            };
-            event_send_gsignal(&s);
             scene->active_object = obj;
             return y;
         }
@@ -578,9 +565,9 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 	rpos.x += label_w + 10;
 	switch (p->type) {
 		case PX_RS_PROPERTY_STRING: {
-			if (p->size != sizeof(char*)) break;
+			if (p->size != sizeof(char**) || text_field_ptr >= (sizeof(text_fields)/sizeof(PX_Event_TextField))) break;
 
-			PX_Event_TextField tfield = (PX_Event_TextField){
+			text_fields[text_field_ptr] = (PX_Event_TextField){
 				.on_enter = NULL,
 				.fixed_on_screen = true,
 				.placeholder_text = *(const char**)p->data,
@@ -588,7 +575,7 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 				.pixel_height = font_size,
 				.font = font,
 				.is_typing = false,
-				.callback_data = NULL,
+				.callback_data = p,
 				.panel = (PX_Panel){
 					.blur = 0.0f,
 					.color = (PX_Color4){0x0, 0x0, 0x0, 0xFF},
@@ -596,8 +583,10 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 					.noise = 0.0f
 				}
 			};
-			event_text_input(lvt, &tfield, (PX_Transform2){.pos=rpos, .scale=(PX_Scale2){100, font_size + 6}, .rot=0.0f});
 
+			PX_Event_TextField* tfield = &text_fields[text_field_ptr++];
+			PX_Transform2 tfield_trans = (PX_Transform2){.pos=rpos, .scale=(PX_Scale2){100, font_size + 6}, .rot=0.0f};
+			event_text_input(lvt, tfield, tfield_trans);
 			break;
 		}
 

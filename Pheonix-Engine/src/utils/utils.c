@@ -6,6 +6,9 @@
 #include <rendering-sys.h>
 #include <font.h>
 #include <window-sys.h>
+
+#include <event-sys/keycodes.h>
+
 #include <utils.h>
 
 char* px_util_strdup(const char* s) {
@@ -50,14 +53,15 @@ PX_AnchorRect px_util_convert_transform_to_anchor(PX_Transform2 t, PX_Window* wi
     };
 }
 
-PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size) {
+// Auto sets callback data as identifier
+PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size, void (*on_select)(PX_DropdownNode* node, void* identifier)) {
     PX_DropdownNode* node = malloc(sizeof(*node));
     if (!node) return NULL;
 
     *node = (PX_DropdownNode){
         .label = label ? px_util_strdup(label) : NULL,
 		.identifier = iden,
-        .on_select = NULL,
+        .on_select = on_select,
         .callback_data = NULL,
         .parent = parent,
         .next = NULL,
@@ -69,6 +73,7 @@ PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode
         .scale = label ? (PX_Scale2){px_rs_text_width(font, label, font_size) + 5, font_size + 5} : (PX_Scale2){0},
         .rot = 0.0f
     };
+	node->callback_data = (void*)&node->identifier;
 
     if (!node->label && label) {
         free(node);
@@ -140,4 +145,79 @@ void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 	}
 
 	if (field) *field = NULL;
+}
+
+char px_util_ekeycode_to_char(PX_EKeycodes key, bool caps, bool shift) {
+	switch (key) {
+		case EKeycode_0: return shift ? ')' : '0';
+		case EKeycode_1: return shift ? '!' : '1';
+		case EKeycode_2: return shift ? '@' : '2';
+		case EKeycode_3: return shift ? '#' : '3';
+		case EKeycode_4: return shift ? '$' : '4';
+		case EKeycode_5: return shift ? '%' : '5';
+		case EKeycode_6: return shift ? '^' : '6';
+		case EKeycode_7: return shift ? '&' : '7';
+		case EKeycode_8: return shift ? '*' : '8';
+		case EKeycode_9: return shift ? '(' : '9';
+
+		case EKeycode_Q: return caps ^ shift ? 'Q' : 'q';
+		case EKeycode_W: return caps ^ shift ? 'W' : 'w';
+		case EKeycode_E: return caps ^ shift ? 'E' : 'e';
+		case EKeycode_R: return caps ^ shift ? 'R' : 'r';
+		case EKeycode_T: return caps ^ shift ? 'T' : 't';
+		case EKeycode_Y: return caps ^ shift ? 'Y' : 'y';
+		case EKeycode_U: return caps ^ shift ? 'U' : 'u';
+		case EKeycode_I: return caps ^ shift ? 'I' : 'i';
+		case EKeycode_O: return caps ^ shift ? 'O' : 'o';
+		case EKeycode_P: return caps ^ shift ? 'P' : 'p';
+		case EKeycode_A: return caps ^ shift ? 'A' : 'a';
+		case EKeycode_S: return caps ^ shift ? 'S' : 's';
+		case EKeycode_D: return caps ^ shift ? 'D' : 'd';
+		case EKeycode_F: return caps ^ shift ? 'F' : 'f';
+		case EKeycode_G: return caps ^ shift ? 'G' : 'g';
+		case EKeycode_H: return caps ^ shift ? 'H' : 'h';
+		case EKeycode_J: return caps ^ shift ? 'J' : 'j';
+		case EKeycode_K: return caps ^ shift ? 'K' : 'k';
+		case EKeycode_L: return caps ^ shift ? 'L' : 'l';
+		case EKeycode_Z: return caps ^ shift ? 'Z' : 'z';
+		case EKeycode_X: return caps ^ shift ? 'X' : 'x';
+		case EKeycode_C: return caps ^ shift ? 'C' : 'c';
+		case EKeycode_V: return caps ^ shift ? 'V' : 'v';
+		case EKeycode_B: return caps ^ shift ? 'B' : 'b';
+		case EKeycode_N: return caps ^ shift ? 'N' : 'n';
+		case EKeycode_M: return caps ^ shift ? 'M' : 'm';
+
+		case EKeycode_Space: return ' ';
+
+		case EKeycode_Backtick: return shift ? '~' : '`';
+		case EKeycode_Dash: return shift ? '_' : '-';
+		case EKeycode_Equals: return shift ? '+' : '=';
+		case EKeycode_SqBracketOpen: return shift ? '{' : '[';
+		case EKeycode_SqBracketClose: return shift ? '}' : ']';
+		case EKeycode_Backslash: return shift ? '|' : '\\';
+		case EKeycode_Semicolon: return shift ? ':' : ';';
+		case EKeycode_SingleQuotes: return shift ? '"' : '\'';
+		case EKeycode_Comma: return shift ? '<' : ',';
+		case EKeycode_Fullstop: return shift ? '>' : '.';
+		case EKeycode_Slash: return shift ? '?' : '/';
+
+		case EKeycode_Num0: return shift ? ')' : '0';
+		case EKeycode_Num1: return shift ? '!' : '1';
+		case EKeycode_Num2: return shift ? '@' : '2';
+		case EKeycode_Num3: return shift ? '#' : '3';
+		case EKeycode_Num4: return shift ? '$' : '4';
+		case EKeycode_Num5: return shift ? '%' : '5';
+		case EKeycode_Num6: return shift ? '^' : '6';
+		case EKeycode_Num7: return shift ? '&' : '7';
+		case EKeycode_Num8: return shift ? '*' : '8';
+		case EKeycode_Num9: return shift ? '(' : '9';
+
+		case EKeycode_NumPoint: return '.';
+		case EKeycode_NumSlash: return '/';
+		case EKeycode_NumAsterik: return '*';
+		case EKeycode_NumDash: return '-';
+		case EKeycode_NumPlus: return '+';
+
+		default: return '\0';
+	}
 }

@@ -13,7 +13,6 @@
 #include <editor.h>
 
 static const PX_Color4 white_color = {0xFF, 0xFF, 0xFF, 0xFF};
-static PX_Dropdown* scene_context_panel_dropdown = NULL;
 
 static void append_to_scene_2d(PX_2D_Object* obj, PX_2D_Object** out_ptr) {
 	if (!obj) return;
@@ -42,7 +41,7 @@ static void handle_create_2d_panel(void) {
 	// Connect Properties
 	PX_Property* p_name = px_util_property_add("Name", PX_RS_PROPERTY_STRING, NULL);
 	if (!p_name) {free(panel); return;}
-	p_name->data = NULL; p_name->size = sizeof(char*);
+	p_name->data = NULL; p_name->size = sizeof(char**);
 
 	PX_Property* p_color = px_util_property_add("Color", PX_RS_PROPERTY_COLOR4, p_name);
 	if (!p_color) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
@@ -83,23 +82,18 @@ static void handle_create_2d_panel(void) {
 	if (final_obj) p_name->data = &final_obj->name;
 }
 
-void scene_context_panel_evs_init(PX_Dropdown* scene_context_panel_dd) {
-    scene_context_panel_dropdown = scene_context_panel_dd;
+void scene_context_panel_evs_init(void) {
+	return;
 }
 
-void scene_context_panel_evs_handle_events(PX_Event_GSignal* signal) {
-    switch (signal->type) {
-        case EVENT_GSIGNAL_UI_DROPDOWN_CLICK:
-			if (!signal->ui_dropdown_click.clicked_node || !signal->ui_dropdown_click.dropdown) return;
-            if (signal->ui_dropdown_click.dropdown != scene_context_panel_dropdown) return;
-            switch (signal->ui_dropdown_click.clicked_node->identifier) {
-				// Create (Identifier 1, Options 1000-1005)
-				// Create -> 2D (Identifier 1000, Options 10001-10003)
-				case 10001: handle_create_2d_panel(); break;
+void scene_context_panel_evs_handle_events(PX_DropdownNode* node, void* identifier) {
+	if (!node || !identifier) return;
+	
+    switch (*(size_t*)identifier) {
+		// Create (Identifier 1, Options 1000-1005)
+		// Create -> 2D (Identifier 1000, Options 10001-10003)
+		case 10001: handle_create_2d_panel(); break;
 
-				default: return;
-            }
-            break;
-        default: return;
-    }
+		default: return;
+	}
 }

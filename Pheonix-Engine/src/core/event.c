@@ -9,12 +9,29 @@
 #include <rendering-sys.h>
 #include <font.h>
 
+#include <event-sys/keycodes.h>
+
 #define MAX_GLOBAL_SIGNALS 64
+#define MAX_TEXT_FIELDS 64
+#define EVENT_WIDGET_CAP_STEP 32
+#define MAX_TEXT_INPUT_SIZE 4096
 
 static PX_Scale2 mwindow_s = {0};
 static PX_Vector2 mouse_pos = {0};
+
 static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
 static int gsignals_count = 0;
+
+static PX_Event_TextField* active_text_field = NULL;
+static char active_text_field_text[MAX_TEXT_INPUT_SIZE];
+static size_t active_text_field_text_ptr = 0;
+
+static PX_Event_Widget* event_widgets = NULL;
+static size_t event_widget_count = 0;
+static size_t event_widget_cap = 0;
+
+static bool is_caps = false;
+static bool is_shift = false;
 
 static PX_Transform2 combine_transform2_as_container(PX_Transform2 parent, PX_Transform2 local) {
     PX_Transform2 out = {0};
@@ -37,6 +54,13 @@ static PX_Transform2 combine_transform2_as_container(PX_Transform2 parent, PX_Tr
 void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
     mwindow_s = main_window_scale;
     mouse_pos = mouse_position;
+}
+
+void event_sys_deinit(void) {
+    if (event_widgets) free(event_widgets);
+	event_widgets = NULL;
+	event_widget_cap = 0;
+	event_widget_count = 0;
 }
 
 void event_resize(PX_Scale2 main_window_scale) {
@@ -166,26 +190,25 @@ void event_click_dropdown(PX_Dropdown* dd, bool close_main_panel_too) {
 		return;
 	}
 	if (node->on_select) node->on_select(node, node->callback_data);
-	else {
-		// Incase silent event is not used, send global wide event
-		PX_Event_GSignal gsignal = {
-			.type = EVENT_GSIGNAL_UI_DROPDOWN_CLICK,
-			.ui_dropdown_click = (PX_Event_GSignal_UIDropdownClick){
-				.dropdown = dd,
-				.clicked_node = node
-			}
-		};
-		event_send_gsignal(&gsignal);
-	}
 
 	event_dropdown_close_children(dd->root);
 	if (close_main_panel_too) dd->visible = false;
 }
 
+void event_click_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, PX_Transform2 transform) {
+	if (!field) return;
+
+	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
+	PX_Transform2 final = combine_transform2_as_container(lvt, transform);
+
+	field->is_typing = is_mouse_on(final);
+	if (field->is_typing) active_text_field = field;
+}
+
 void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, PX_Transform2 transform) {
 	if (!field) return;
+	
 	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
-
 	px_rs_draw_panel(local_viewport, transform, field->panel, field->fixed_on_screen);
 
 	if (!field->is_typing) {
@@ -209,39 +232,104 @@ void event_pop_gsignal(PX_Event_GSignal* out) {
     memcpy(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
 }
 
-static char* get_identifier(PX_Event_Identifier** identifiers, int size, void* ptr) {
-    for (int i = 0; i < size; i++) {
-        if (identifiers[i]->ptr == ptr) {
-            return (char*)identifiers[i]->identifier;
-        }
-    }
-    return NULL;
-}
-
-void event_handle_gsignals(PX_Event_Identifier** identifiers, int identifiers_len, PX_Event_GSignal* core_signal, bool* core_signal_active) {
+void event_handle_gsignals(PX_Event_GSignal* core_signal, bool* core_signal_active) {
     PX_Event_GSignal sig = {0};
     PX_Event_GSignal* s = &sig;
     event_pop_gsignal(s);
+
     if (s->type == EVENT_GSIGNAL_UNKNOWN) return;
 
-    char* iden = NULL;
     switch (s->type) {
-        case EVENT_GSIGNAL_UI_DROPDOWN_CLICK:
-            iden = get_identifier(identifiers, identifiers_len, (void*)s->ui_dropdown_click.dropdown);
-            if (!iden) break;
-
-            if (strcmp(iden, "menubar") == 0) {
-                menu_evs_handle_events(s);
-            } else if (strcmp(iden, "scene-panel-context-menu") == 0) {
-                scene_context_panel_evs_handle_events(s);
-            }
-            break;
-        case EVENT_GSIGNAL_CORE_QUIT:
+        case EVENT_GSIGNAL_CORE_QUIT: {
             memcpy(core_signal, s, sizeof(PX_Event_GSignal));
             *core_signal_active = true;
             return;
+		}
+
         default: break;
     }
 
     *core_signal_active = false;
+}
+
+t_err_codes event_register_widget(PX_Event_Widget* widget) {
+	if (!widget) return ERR_INVALID_ARGUMENTS;
+
+	if (event_widget_count + 1 > event_widget_cap) {
+		// Realloc
+		PX_Event_Widget* nptr = realloc(event_widgets, sizeof(PX_Event_Widget)*(event_widget_cap+EVENT_WIDGET_CAP_STEP));
+		if (!nptr) return ERR_ALLOC_FAILED;
+
+		event_widget_cap += EVENT_WIDGET_CAP_STEP;
+		event_widgets = nptr;
+	}
+
+	widget->valid = true;
+	event_widgets[event_widget_count++] = *widget;
+	return ERR_SUCCESS;
+}
+
+void event_key_update(PX_EKeycodes key, bool pressed) {
+	switch (key) {
+		case EKeycode_RShift:
+		case EKeycode_LShift: {
+			is_shift = pressed;
+			return;
+		}
+
+		default: break;
+	}
+
+	if (!pressed) return;
+
+	switch (key) {
+		case EKeycode_Capslock: {
+			is_caps = !is_caps;
+			return;
+		}
+		default: break;
+	}
+
+	if (active_text_field) {
+		// IS Key Printable ASCII?
+		char c = px_util_ekeycode_to_char(key, is_caps, is_shift);
+		if (c != '\0') {
+			if (active_text_field_text_ptr >= MAX_TEXT_INPUT_SIZE-1) return;
+			active_text_field_text[active_text_field_text_ptr++] = c;
+			active_text_field_text[active_text_field_text_ptr] = '\0'; // Add NULL Terminator
+
+			return; // Later cases don't require printable, so skip them entirely
+		} else {
+			switch (key) {
+				case EKeycode_Enter: {
+					active_text_field->on_enter(active_text_field, active_text_field_text, active_text_field->callback_data);
+					active_text_field_text_ptr = 0;
+					active_text_field = NULL;
+					return;
+				}
+
+				default: break;
+			}
+		}
+	}
+
+	if (!event_widgets) return;
+	for (size_t i = 0; i < event_widget_count; i++) {
+		PX_Event_Widget* widget = &event_widgets[i];
+
+		switch (widget->type) {
+			case PX_EVENT_WIDGET_TYPE_DROPDOWN: {
+				if (key == EKeycode_MouseLButton) event_click_dropdown(widget->dropdown.dd, widget->dropdown.close_main_panel_too);
+				else event_hover_dropdown(widget->dropdown.dd);
+				break;
+			}
+
+			case PX_EVENT_WIDGET_TYPE_TEXT_FIELD: {
+				if (key == EKeycode_MouseLButton) event_click_text_input(widget->text_field.lvt, widget->text_field.tfield, widget->text_field.transform);
+				break;
+			}
+
+			default: break;
+		}
+	}
 }

@@ -12,8 +12,6 @@
 #include <editor.h>
 
 static char* save_path = NULL;
-static PX_Dropdown* menu_dropdown = NULL;
-
 static bool fullscreened = false;
 
 // FILE Options
@@ -69,37 +67,31 @@ static void handle_view_toggle_3d_2d(void) {
 	}
 }
 
-void menu_evs_init(PX_Dropdown* menu_dd, char* path_to_save) {
-    menu_dropdown = menu_dd;
+void menu_evs_init(char* path_to_save) {
     save_path = path_to_save;
 }
 
-void menu_evs_handle_events(PX_Event_GSignal* signal) {
-    switch (signal->type) {
-        case EVENT_GSIGNAL_UI_DROPDOWN_CLICK:
-			if (!signal->ui_dropdown_click.clicked_node || !signal->ui_dropdown_click.dropdown) return;
-            if (signal->ui_dropdown_click.dropdown != menu_dropdown) return;
-            switch (signal->ui_dropdown_click.clicked_node->identifier) {
-				// File (Identifier 1, Options 1000-1005)
-				// File -> New (Identifier 1000, Options 10001-10003)
-				case 10001: handle_file_new_project(); break;
+void menu_evs_handle_events(PX_DropdownNode* node, void* identifier) {
+	if (!node || !identifier) return;
 
-				case 1001: handle_file_open(); break;
-				case 1002: handle_file_save(); break;
-				case 1003: handle_file_save_as(); break;
-				case 1004: handle_file_import(); break;
-				case 1005: handle_file_quit(); break;
+    switch (*(size_t*)identifier) {
+		// File (Identifier 1, Options 1000-1005)
+		// File -> New (Identifier 1000, Options 10001-10003)
+		case 10001: handle_file_new_project(); break;
 
-				// Edit (Identifier 2, Options 2000-2001)
+		case 1001: handle_file_open(); break;
+		case 1002: handle_file_save(); break;
+		case 1003: handle_file_save_as(); break;
+		case 1004: handle_file_import(); break;
+		case 1005: handle_file_quit(); break;
 
-				// View (Identifier 3, Options 3000-3001)
-				case 3000: handle_view_fullscreen(); break;
-				case 3001: handle_view_toggle_3d_2d(); break;
+		// Edit (Identifier 2, Options 2000-2001)
 
-				// Help (Identifier 4, Options 4000-4000)
-				default: return;
-            }
-            break;
+		// View (Identifier 3, Options 3000-3001)
+		case 3000: handle_view_fullscreen(); break;
+		case 3001: handle_view_toggle_3d_2d(); break;
+
+		// Help (Identifier 4, Options 4000-4000)
         default: return;
     }
 }

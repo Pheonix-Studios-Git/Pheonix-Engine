@@ -1223,17 +1223,6 @@ void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     uint8_t subId = pixel[3];
 
     if (subId <= 0) return; // Nothing there
-
-    PX_Event_GSignal event = {
-        .type=EVENT_GSIGNAL_3D_HOVER,
-        .mouse_hover_on_3d = (PX_Event_GSignal_3dHover){
-            .id = id,
-            .subId = subId,
-            .objType = objType
-        }
-    };
-
-    event_send_gsignal(&event);
 }
 
 t_err_codes px_rs_gl_create_texture(PX_Texture* texture) {

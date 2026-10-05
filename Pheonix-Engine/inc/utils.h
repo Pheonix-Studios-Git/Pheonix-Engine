@@ -4,11 +4,14 @@
 #include <font.h>
 #include <window-sys.h>
 
+#include <event-sys/keycodes.h>
+
 char* px_util_strdup(const char* s);
 PX_Transform2 px_util_convert_anchor_to_transform(PX_AnchorRect r);
 PX_AnchorRect px_util_convert_transform_to_anchor(PX_Transform2 t, PX_Window* win);
-PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size);
+PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size, void (*on_select)(PX_DropdownNode* node, void* identifier));
 void px_util_dropdown_node_destroy(PX_DropdownNode* node);
 void px_util_dropdown_destroy(PX_Dropdown* dd);
 PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Property* parent);
 void px_util_destroy_properties(PX_Property* start, PX_Property** field);
+char px_util_ekeycode_to_char(PX_EKeycodes key, bool caps, bool shift);
