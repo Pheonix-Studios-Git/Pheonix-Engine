@@ -14,7 +14,7 @@
 #define MAX_GLOBAL_SIGNALS 64
 #define MAX_TEXT_FIELDS 64
 #define EVENT_WIDGET_CAP_STEP 32
-#define MAX_TEXT_INPUT_SIZE 4096
+#define TEXT_INPUT_CAP 128
 
 static PX_Scale2 mwindow_s = {0};
 static PX_Vector2 mouse_pos = {0};
@@ -22,13 +22,11 @@ static PX_Vector2 mouse_pos = {0};
 static PX_Event_GSignal gsignal_queue[MAX_GLOBAL_SIGNALS];
 static int gsignals_count = 0;
 
-static PX_Event_TextField* active_text_field = NULL;
-static char active_text_field_text[MAX_TEXT_INPUT_SIZE];
-static size_t active_text_field_text_ptr = 0;
-
 static PX_Event_Widget* event_widgets = NULL;
 static size_t event_widget_count = 0;
 static size_t event_widget_cap = 0;
+
+static PX_Event_TextField* active_text_field = NULL;
 
 static bool is_caps = false;
 static bool is_shift = false;
@@ -57,7 +55,20 @@ void event_sys_init(PX_Scale2 main_window_scale, PX_Vector2 mouse_position) {
 }
 
 void event_sys_deinit(void) {
-    if (event_widgets) free(event_widgets);
+    if (event_widgets) {
+		size_t widgets_valid = 0;
+		for (size_t i = 0; i < event_widget_cap; i++) {
+			if (widgets_valid >= event_widget_count) break;
+
+			if (event_widgets[i].valid) {
+				event_unregister_widget(i+1);
+				widgets_valid++;
+			}
+		}
+
+		free(event_widgets);
+	}
+
 	event_widgets = NULL;
 	event_widget_cap = 0;
 	event_widget_count = 0;
@@ -202,7 +213,10 @@ void event_click_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* fi
 	PX_Transform2 final = combine_transform2_as_container(lvt, transform);
 
 	field->is_typing = is_mouse_on(final);
-	if (field->is_typing) active_text_field = field;
+	if (field->is_typing) {
+		field->interacted = true;
+		active_text_field = field;
+	}
 }
 
 void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, PX_Transform2 transform) {
@@ -211,9 +225,18 @@ void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, P
 	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
 	px_rs_draw_panel(local_viewport, transform, field->panel, field->fixed_on_screen);
 
-	if (!field->is_typing) {
-		px_rs_render_text(field->placeholder_text, field->pixel_height, px_util_convert_transform_to_anchor(combine_transform2_as_container(lvt, transform), local_viewport.window), (PX_Vector2){.x=2, .y=2}, field->placeholder_color, field->font);
+	char* t = (char*)field->placeholder_text;
+	PX_Color4 color = field->placeholder_color;
+
+	if (field->text) {
+		t = field->text;
+		color = field->text_color;
+	} else if (field->base_text && !field->interacted) {
+		t = (char*)field->base_text;
+		color = field->base_color;
 	}
+
+	if (t) px_rs_render_text((const char*)t, field->pixel_height, px_util_convert_transform_to_anchor(combine_transform2_as_container(lvt, transform), local_viewport.window), (PX_Vector2){.x=2, .y=2}, color, field->font);
 }
 
 void event_send_gsignal(PX_Event_GSignal* signal) {
@@ -252,40 +275,96 @@ void event_handle_gsignals(PX_Event_GSignal* core_signal, bool* core_signal_acti
     *core_signal_active = false;
 }
 
-t_err_codes event_register_widget(PX_Event_Widget* widget) {
-	if (!widget) return ERR_INVALID_ARGUMENTS;
+static int64_t event_find_free_widget_slot(void) {
+	if (!event_widgets) return -1;
+	if (event_widget_count < 1) return 0;
 
-	if (event_widget_count + 1 > event_widget_cap) {
+	for (size_t i = 0; i < event_widget_cap; i++) {
+		if (!event_widgets[i].valid) return i;
+	}
+
+	return -1;
+}
+
+size_t event_register_widget(PX_Event_Widget* widget) { // Returns Identifier ID of Widget (The Widget's index + 1)
+	if (!widget) return 0;
+
+	if (!event_widgets) {
+		// Allocate
+		event_widgets = (PX_Event_Widget*)calloc(EVENT_WIDGET_CAP_STEP, sizeof(PX_Event_Widget));
+		if (!event_widgets) return 0;
+
+		event_widget_cap = EVENT_WIDGET_CAP_STEP;
+	} else if (event_widget_count + 1 > event_widget_cap) {
 		// Realloc
-		PX_Event_Widget* nptr = realloc(event_widgets, sizeof(PX_Event_Widget)*(event_widget_cap+EVENT_WIDGET_CAP_STEP));
-		if (!nptr) return ERR_ALLOC_FAILED;
+		PX_Event_Widget* nptr = (PX_Event_Widget*)realloc(event_widgets, sizeof(PX_Event_Widget)*(event_widget_cap+EVENT_WIDGET_CAP_STEP));
+		if (!nptr) return 0;
+
+		memset((uint8_t*)nptr + (event_widget_cap*sizeof(PX_Event_Widget)), 0, EVENT_WIDGET_CAP_STEP*sizeof(PX_Event_Widget));
 
 		event_widget_cap += EVENT_WIDGET_CAP_STEP;
 		event_widgets = nptr;
 	}
 
 	widget->valid = true;
-	event_widgets[event_widget_count++] = *widget;
-	return ERR_SUCCESS;
+
+	int64_t true_iden = event_find_free_widget_slot();
+	if (true_iden < 0) return 0; // No free slot
+
+	size_t iden = (size_t)true_iden;
+	event_widgets[iden] = *widget;
+	
+	event_widget_count++;
+
+	return iden+1;
 }
 
-void event_key_update(PX_EKeycodes key, bool pressed) {
-	switch (key) {
-		case EKeycode_RShift:
-		case EKeycode_LShift: {
-			is_shift = pressed;
-			return;
+void event_unregister_widget(size_t widget_identifier) {
+	if (widget_identifier < 1 || widget_identifier > event_widget_count) return;
+
+	PX_Event_Widget* widget = &event_widgets[widget_identifier-1];
+	if (!widget->valid) return;
+
+	switch (widget->type) {
+		case PX_EVENT_WIDGET_TYPE_TEXT_FIELD: {
+			// Release all event side allocations
+			if (!widget->text_field.tfield) goto remove;
+
+			if (widget->text_field.tfield->text) free(widget->text_field.tfield->text);
+
+			widget->text_field.tfield->text = NULL;
+			widget->text_field.tfield->text_cap = 0;
+			widget->text_field.tfield->text_size = 0;
+
+			break;
 		}
 
 		default: break;
 	}
 
-	if (!pressed) return;
+	remove: {
+		widget->valid = false;
+		event_widget_count--;
+	}
+}
+
+bool event_key_update(PX_EKeycodes key, bool pressed) { // Returns a bool, which when true should block all later key processesing
+	switch (key) {
+		case EKeycode_RShift:
+		case EKeycode_LShift: {
+			is_shift = pressed;
+			return false;
+		}
+
+		default: break;
+	}
+
+	if (!pressed) return false;
 
 	switch (key) {
 		case EKeycode_Capslock: {
 			is_caps = !is_caps;
-			return;
+			return false;
 		}
 		default: break;
 	}
@@ -294,18 +373,35 @@ void event_key_update(PX_EKeycodes key, bool pressed) {
 		// IS Key Printable ASCII?
 		char c = px_util_ekeycode_to_char(key, is_caps, is_shift);
 		if (c != '\0') {
-			if (active_text_field_text_ptr >= MAX_TEXT_INPUT_SIZE-1) return;
-			active_text_field_text[active_text_field_text_ptr++] = c;
-			active_text_field_text[active_text_field_text_ptr] = '\0'; // Add NULL Terminator
+			if (!active_text_field->text) {
+				active_text_field->text = (char*)calloc(TEXT_INPUT_CAP, sizeof(char));
+				if (!active_text_field->text) goto text_field_alloc_failed;
 
-			return; // Later cases don't require printable, so skip them entirely
+				active_text_field->text_cap = TEXT_INPUT_CAP;
+			} else if (active_text_field->text_size + 1 > active_text_field->text_cap) {
+				char* nptr = (char*)realloc(active_text_field->text, active_text_field->text_cap + TEXT_INPUT_CAP);
+				if (!nptr) goto text_field_alloc_failed;
+
+				active_text_field->text = nptr;
+				active_text_field->text_cap += TEXT_INPUT_CAP;
+			}
+
+			active_text_field->text[active_text_field->text_size++] = c;
+			active_text_field->text[active_text_field->text_size] = '\0';
+
+			text_field_alloc_failed: {
+				return true; // Later cases don't require printable, so skip them entirely
+			}
 		} else {
 			switch (key) {
 				case EKeycode_Enter: {
-					active_text_field->on_enter(active_text_field, active_text_field_text, active_text_field->callback_data);
-					active_text_field_text_ptr = 0;
+					if (active_text_field->on_enter) active_text_field->on_enter(active_text_field, active_text_field->text, active_text_field->callback_data);
+					
+					active_text_field->text[0] = '\0';
+					active_text_field->text_size = 0;
+					active_text_field->is_typing = false;
 					active_text_field = NULL;
-					return;
+					return false;
 				}
 
 				default: break;
@@ -313,9 +409,15 @@ void event_key_update(PX_EKeycodes key, bool pressed) {
 		}
 	}
 
-	if (!event_widgets) return;
-	for (size_t i = 0; i < event_widget_count; i++) {
+	if (!event_widgets) return false;
+
+	size_t widgets_valid = 0;
+	for (size_t i = 0; i < event_widget_cap; i++) {
+		if (widgets_valid >= event_widget_count) break;
+
 		PX_Event_Widget* widget = &event_widgets[i];
+		if (!widget->valid) continue;
+		widgets_valid++;
 
 		switch (widget->type) {
 			case PX_EVENT_WIDGET_TYPE_DROPDOWN: {
@@ -332,4 +434,6 @@ void event_key_update(PX_EKeycodes key, bool pressed) {
 			default: break;
 		}
 	}
+
+	return false;
 }

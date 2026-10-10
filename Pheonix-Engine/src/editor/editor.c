@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include <pheonix-engine.h>
@@ -7,13 +8,23 @@
 #include <event-sys.h>
 #include <err-codes.h>
 #include <window-sys.h>
+#include <utils.h>
+
 #include <editor.h>
 
 static PX_EditorState state_raw = {0};
 static PX_EditorState* state = &state_raw;
 
-PX_Event_TextField text_fields[64]; // 64 fields
-size_t text_field_ptr;
+struct PX_Event_TextField_WIdentifier {
+	PX_Event_TextField text_field;
+	size_t identifier;
+};
+
+PX_2D_Object* property_cur_2d_object = NULL;
+PX_3D_Object* property_cur_3d_object = NULL;
+
+struct PX_Event_TextField_WIdentifier property_text_fields[64]; // 64 fields
+size_t property_text_field_ptr;
 
 static t_err_codes editor_init_state(char* proj_name, PX_EditorMode base_mode) {
     state->editor_version = PX_EDITOR_CUR_VERSION;
@@ -28,7 +39,7 @@ static t_err_codes editor_init_state(char* proj_name, PX_EditorMode base_mode) {
     root_obj3d->ex_data = NULL;
     root_obj3d->ex_data_type = PX_RS_OBJECT_3D_TYPE_EMPTY;
     root_obj3d->has_children = false;
-    root_obj3d->name = "root";
+    root_obj3d->name = px_util_strdup("root");
     root_obj3d->static_object = true;
     root_obj3d->type = PX_RS_OBJECT_3D_TYPE_EMPTY;
     root_obj3d->local_transform = (PX_Transform3){.rot.w=1,.scale=(PX_Scale3){1,1,1}};
@@ -38,7 +49,7 @@ static t_err_codes editor_init_state(char* proj_name, PX_EditorMode base_mode) {
     root_obj2d->ex_data = NULL;
     root_obj2d->ex_data_type = PX_RS_OBJECT_2D_TYPE_EMPTY;
     root_obj2d->has_children = false;
-    root_obj2d->name = "root";
+    root_obj2d->name = px_util_strdup("root");
     root_obj2d->static_object = true;
     root_obj2d->type = PX_RS_OBJECT_2D_TYPE_EMPTY;
     root_obj2d->local_transform = (PX_Transform2){.scale=(PX_Scale2){1,1}};
@@ -565,16 +576,21 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 	rpos.x += label_w + 10;
 	switch (p->type) {
 		case PX_RS_PROPERTY_STRING: {
-			if (p->size != sizeof(char**) || text_field_ptr >= (sizeof(text_fields)/sizeof(PX_Event_TextField))) break;
+			if (p->size != sizeof(char**) || property_text_field_ptr >= (sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier))) break;
 
-			text_fields[text_field_ptr] = (PX_Event_TextField){
+			struct PX_Event_TextField_WIdentifier* tfield_widen = &property_text_fields[property_text_field_ptr++];
+			PX_Event_TextField* tfield = &tfield_widen->text_field;
+
+			*tfield = (PX_Event_TextField){
 				.on_enter = NULL,
 				.fixed_on_screen = true,
-				.placeholder_text = *(const char**)p->data,
+				.placeholder_text = "Name of Object",
 				.placeholder_color = text_color,
+				.base_text = *(const char**)p->data,
+				.base_color = text_color,
 				.pixel_height = font_size,
 				.font = font,
-				.is_typing = false,
+				.text_color = text_color,
 				.callback_data = p,
 				.panel = (PX_Panel){
 					.blur = 0.0f,
@@ -584,8 +600,19 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 				}
 			};
 
-			PX_Event_TextField* tfield = &text_fields[text_field_ptr++];
+			if (!tfield->is_typing && tfield->text) {
+				*(char**)p->data = tfield->text;
+			}
+
 			PX_Transform2 tfield_trans = (PX_Transform2){.pos=rpos, .scale=(PX_Scale2){100, font_size + 6}, .rot=0.0f};
+			PX_Event_Widget widget = {
+				.type = PX_EVENT_WIDGET_TYPE_TEXT_FIELD,
+				.text_field.lvt = lvt,
+				.text_field.transform = tfield_trans,
+				.text_field.tfield = tfield
+			};
+
+			tfield_widen->identifier = event_register_widget(&widget);
 			event_text_input(lvt, tfield, tfield_trans);
 			break;
 		}
@@ -614,6 +641,18 @@ void editor_draw_properties_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos,
 			if (!obj) return;
 			if (!obj->properties) return;
 
+			if (property_cur_3d_object != obj || property_cur_2d_object) {
+				for (size_t i = 0; i < sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier); i++) {
+					if (property_text_fields[i].identifier > 0) event_unregister_widget(property_text_fields[i].identifier);
+				}
+				
+				memset(property_text_fields, 0, sizeof(property_text_fields));
+				property_text_field_ptr = 0;
+
+				property_cur_2d_object = NULL;
+				property_cur_3d_object = obj;
+			}
+
 			editor_draw_properties(obj->properties, local_viewport, transform, mpos, (PX_Vector2){transform.pos.x+6, transform.pos.y+2}, font, font_size, text_color);
 			break;
 		}
@@ -621,6 +660,18 @@ void editor_draw_properties_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos,
 			PX_2D_Object* obj = state->scene_2d->active_object;
 			if (!obj) return;
 			if (!obj->properties) return;
+
+			if (property_cur_2d_object != obj || property_cur_3d_object) {
+				for (size_t i = 0; i < sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier); i++) {
+					if (property_text_fields[i].identifier > 0) event_unregister_widget(property_text_fields[i].identifier);
+				}
+				
+				memset(property_text_fields, 0, sizeof(property_text_fields));
+				property_text_field_ptr = 0;
+
+				property_cur_3d_object = NULL;
+				property_cur_2d_object = obj;
+			}
 
 			editor_draw_properties(obj->properties, local_viewport, transform, mpos, (PX_Vector2){transform.pos.x+6, transform.pos.y+2}, font, font_size, text_color);
 			break;

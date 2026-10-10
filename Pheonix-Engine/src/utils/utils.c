@@ -138,6 +138,17 @@ void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 	while (cur) {
 		if (cur->label) free((void*)cur->label);
 
+		switch (cur->type) {
+			case PX_RS_PROPERTY_STRING: {
+				if (cur->size != sizeof(char**) || !cur->data) break;
+				
+				free(*(char**)cur->data);
+				*(char**)cur->data = NULL;
+			}
+
+			default: break;
+		}
+
 		PX_Property* to_free = cur;
 		cur = cur->next;
 

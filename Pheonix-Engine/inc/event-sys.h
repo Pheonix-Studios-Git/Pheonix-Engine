@@ -10,10 +10,19 @@ typedef struct PX_Event_TextField {
 	PX_Font* font;
 	float pixel_height;
 
-	const char* placeholder_text;
+	const char* placeholder_text; // Placeholder Text is text that shows when no value is present
 	PX_Color4 placeholder_color;
 
+	const char* base_text; // Base Text is text that shows in the start
+	PX_Color4 base_color;
+
+	char* text;
+	PX_Color4 text_color;
+	size_t text_size;
+	size_t text_cap;
+
 	bool is_typing;
+	bool interacted;
 	bool fixed_on_screen;
 
 	void* callback_data;
@@ -72,7 +81,8 @@ void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, P
 void event_send_gsignal(PX_Event_GSignal* signal);
 void event_pop_gsignal(PX_Event_GSignal* out);
 void event_handle_gsignals(PX_Event_GSignal* core_signal, bool* core_signal_active);
-t_err_codes event_register_widget(PX_Event_Widget* widget);
-void event_key_update(PX_EKeycodes key, bool pressed);
+size_t event_register_widget(PX_Event_Widget* widget); // Returns widget identifier
+void event_unregister_widget(size_t widget_identifier);
+bool event_key_update(PX_EKeycodes key, bool pressed);
 bool is_mouse_on(PX_Transform2 tran);
 bool is_mouse_on_anchor(PX_AnchorRect anchor);

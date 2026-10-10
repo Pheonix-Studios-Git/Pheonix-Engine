@@ -63,7 +63,7 @@ static void handle_create_2d_panel(void) {
 	p_noise->min = 0.0f; p_noise->max = 1.0f; p_noise->step = 0.05f;
 
 	PX_2D_Object new_panel = (PX_2D_Object){
-		.name = "Untitled Panel",
+		.name = px_util_strdup("Untitled Panel"),
 		.type = PX_RS_OBJECT_2D_TYPE_PANEL,
 		.active = true,
 		.properties = p_name, // Start property

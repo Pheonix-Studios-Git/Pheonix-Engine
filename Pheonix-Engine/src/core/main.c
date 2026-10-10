@@ -106,6 +106,7 @@ static bool engine_mouse_locked = false;
 static bool engine_mouse_ignore1 = false;
 
 // Dropdowns
+static size_t engine_menu_dropdown_widget_identifier = 0;
 static PX_Dropdown engine_menu_dropdown = {
 	.text_start_offset = (const PX_Vector2){4, 8},
 	.node_spacing = 16.0f,
@@ -120,6 +121,7 @@ static PX_Dropdown engine_menu_dropdown = {
 	.visible = true,
 	.screen_pos_fixed = true
 };
+static size_t engine_scene_panel_context_menu_widget_identifier = 0;
 static PX_Dropdown engine_scene_panel_context_menu = {
 	.text_start_offset = (const PX_Vector2){4, 8},
 	.node_spacing = 16.0f,
@@ -335,7 +337,10 @@ static void enginef_cleanup(void) {
 
 	event_sys_deinit();
 
+	if (engine_menu_dropdown_widget_identifier > 0) event_unregister_widget(engine_menu_dropdown_widget_identifier);
     px_util_dropdown_destroy(&engine_menu_dropdown);
+	
+	if (engine_scene_panel_context_menu_widget_identifier > 0) event_unregister_widget(engine_scene_panel_context_menu_widget_identifier);
 	px_util_dropdown_destroy(&engine_scene_panel_context_menu);
 
     px_font_destroy(engine_font_ui);
@@ -415,7 +420,9 @@ static bool enginef_init_dropdowns(void) {
 			.close_main_panel_too=false
 		}
 	};
-	if (event_register_widget(&dd_w) != ERR_SUCCESS) goto menu_bar_cleanup_n_exit;
+	
+	engine_menu_dropdown_widget_identifier = event_register_widget(&dd_w);
+	if (engine_menu_dropdown_widget_identifier < 1) goto menu_bar_cleanup_n_exit;
 
 	// Scene Panel Context Menu
     engine_scene_panel_context_menu.font = engine_font_ui;
@@ -446,7 +453,9 @@ static bool enginef_init_dropdowns(void) {
 			.close_main_panel_too=true
 		}
 	};
-	if (event_register_widget(&dd_w) != ERR_SUCCESS) goto scene_panel_context_menu_cleanup_n_exit;
+	
+	engine_scene_panel_context_menu_widget_identifier = event_register_widget(&dd_w);
+	if (engine_scene_panel_context_menu_widget_identifier < 1) goto scene_panel_context_menu_cleanup_n_exit;
 
     return true;
 
@@ -1008,7 +1017,8 @@ int main(int argc, char** argv) {
                     break;
 				}
                 case PX_WE_KEYDOWN: {
-					event_key_update(ev.keycode, true);
+					if (event_key_update(ev.keycode, true)) break;
+
                     switch (ev.keycode) {
                         case EKeycode_Escape: {
                             if (engine_mouse_locked) {
@@ -1041,7 +1051,8 @@ int main(int argc, char** argv) {
                     break;
 				}
                 case PX_WE_KEYUP: {
-					event_key_update(ev.keycode, false);
+					if (event_key_update(ev.keycode, false)) break;
+
                     switch (ev.keycode) {
                         case EKeycode_LShift: {
                             if (editor_state->current_mode == PX_EDITOR_MODE_3D && engine_3drenderer_scene_cam_speed_doubled) {
