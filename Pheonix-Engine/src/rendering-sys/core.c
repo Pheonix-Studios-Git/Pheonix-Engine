@@ -404,12 +404,22 @@ static void push_2d_quad(PX_Transform2 container, PX_Transform2 t, PX_Color4 c, 
     gr_batch_2d->vertex_count += 4;
 }
 
-static void push_2d_glyph(float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
+static void push_2d_glyph(PX_Transform2 container, float x0, float y0, float x1, float y1, struct px_sdf_glyph* g, PX_Color4 c) {
 	if (!g) return;
-    if (gr_batch_2d->vertex_count + 6 > gr_batch_2d->vertex_capacity) return;
+    if (gr_batch_2d->vertex_count + 4 > gr_batch_2d->vertex_capacity) return;
+
+	float original_w = x1 - x0;
+    float original_h = y1 - y0;
+
+	PX_Transform2 glyph = {
+		.pos = {fminf(x0, x1), fminf(y0, y1)},
+		.scale = {.w = fabsf(x1 - x0), .h = fabsf(y1 - y0)},
+		.rot = 0.0f
+	};
+
+	if (!is_transform_visible(glyph, container)) return;
 
     struct vertex_2d* v = gr_batch_2d->vertices + gr_batch_2d->vertex_count;
-
     v[0] = (struct vertex_2d){x0, y0, g->u0, g->v0, c.r, c.g, c.b, c.a};
     v[1] = (struct vertex_2d){x1, y0, g->u1, g->v0, c.r, c.g, c.b, c.a};
     v[2] = (struct vertex_2d){x1, y1, g->u1, g->v1, c.r, c.g, c.b, c.a};
@@ -945,14 +955,7 @@ t_err_codes px_rs_render_text(const char* text, float pixel_height, PX_AnchorRec
         float x0 = pen_x + g->bearing_x * scale;
         float x1 = x0 + g->width * scale;
 
-        push_2d_glyph(
-            x0,
-            y0,
-            x1,
-            y1,
-            (struct px_sdf_glyph*)g,
-            color
-        );
+        push_2d_glyph(lvt, x0, y0, x1, y1, (struct px_sdf_glyph*)g, color);
 
         pen_x += g->advance * scale;
     }

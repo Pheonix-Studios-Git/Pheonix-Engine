@@ -215,6 +215,7 @@ void event_click_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* fi
 	field->is_typing = is_mouse_on(final);
 	if (field->is_typing) {
 		field->interacted = true;
+		field->text_cursor = field->text_size;
 		active_text_field = field;
 	}
 }
@@ -348,6 +349,99 @@ void event_unregister_widget(size_t widget_identifier) {
 	}
 }
 
+static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
+	if (!pressed || !active_text_field) return false;
+
+	// IS Key Printable ASCII?
+	char c = px_util_ekeycode_to_char(key, is_caps, is_shift);
+	if (c != '\0') {
+		if (!active_text_field->text) {
+			active_text_field->text = (char*)calloc(TEXT_INPUT_CAP, sizeof(char));
+			if (!active_text_field->text) goto text_field_alloc_failed;
+
+			active_text_field->text_cap = TEXT_INPUT_CAP;
+			active_text_field->text_size = 0;
+			active_text_field->text_cursor = 0;
+		} else if (active_text_field->text_size + 2 > active_text_field->text_cap) {
+			char* nptr = (char*)realloc(active_text_field->text, active_text_field->text_cap + TEXT_INPUT_CAP);
+			if (!nptr) goto text_field_alloc_failed;
+
+			active_text_field->text = nptr;
+			active_text_field->text_cap += TEXT_INPUT_CAP;
+		}
+
+		if (active_text_field->text_cursor > active_text_field->text_size)
+			active_text_field->text_cursor = active_text_field->text_size;
+
+		if (active_text_field->text_cursor != active_text_field->text_size) {
+			memmove(
+				active_text_field->text + active_text_field->text_cursor + 1,
+				active_text_field->text + active_text_field->text_cursor,
+				active_text_field->text_size - active_text_field->text_cursor + 1
+			);
+		}
+		
+		active_text_field->text[active_text_field->text_cursor++] = c;
+		active_text_field->text[++active_text_field->text_size] = '\0';
+
+		text_field_alloc_failed: {
+			return true; // Later cases (in event_key_update) don't require printable, so skip them entirely
+		}
+	} else {
+		switch (key) {
+			case EKeycode_Enter: {
+				if (active_text_field->on_enter) active_text_field->on_enter(active_text_field, active_text_field->text, active_text_field->callback_data);
+				active_text_field->is_typing = false;
+				active_text_field = NULL;
+				return false;
+			}
+			
+			case EKeycode_Backspace: {
+				if (!active_text_field->text || active_text_field->text_cursor < 1 || active_text_field->text_size < 1) break;
+
+				if (active_text_field->text_cursor == active_text_field->text_size) {
+					active_text_field->text[--active_text_field->text_cursor] = '\0';
+				} else {
+					memmove(active_text_field->text + active_text_field->text_cursor - 1, active_text_field->text + active_text_field->text_cursor, active_text_field->text_size - active_text_field->text_cursor + 1);
+					active_text_field->text_cursor--;
+				}
+
+				active_text_field->text_size--;
+				break;
+			}
+			case EKeycode_Delete: {
+				if (!active_text_field->text || active_text_field->text_cursor >= active_text_field->text_size || active_text_field->text_cursor >= active_text_field->text_cap) break;
+				
+				if (active_text_field->text_cursor == active_text_field->text_size-1) {
+					active_text_field->text[active_text_field->text_cursor] = '\0';
+				} else {
+					memmove(active_text_field->text + active_text_field->text_cursor, active_text_field->text + active_text_field->text_cursor + 1, active_text_field->text_size + 2 - active_text_field->text_cursor);
+				}
+				
+				active_text_field->text_size--;
+				break;
+			}
+
+			case EKeycode_LeftArrow: {
+				if (!active_text_field->text || active_text_field->text_cursor == 0) break;
+
+				active_text_field->text_cursor--;
+				break;
+			}
+			case EKeycode_RightArrow: {
+				if (!active_text_field->text || active_text_field->text_cursor == active_text_field->text_size) break;
+
+				active_text_field->text_cursor++;
+				break;
+			}
+
+			default: break;
+		}
+	}
+
+	return true;
+}
+
 bool event_key_update(PX_EKeycodes key, bool pressed) { // Returns a bool, which when true should block all later key processesing
 	switch (key) {
 		case EKeycode_RShift:
@@ -370,43 +464,7 @@ bool event_key_update(PX_EKeycodes key, bool pressed) { // Returns a bool, which
 	}
 
 	if (active_text_field) {
-		// IS Key Printable ASCII?
-		char c = px_util_ekeycode_to_char(key, is_caps, is_shift);
-		if (c != '\0') {
-			if (!active_text_field->text) {
-				active_text_field->text = (char*)calloc(TEXT_INPUT_CAP, sizeof(char));
-				if (!active_text_field->text) goto text_field_alloc_failed;
-
-				active_text_field->text_cap = TEXT_INPUT_CAP;
-			} else if (active_text_field->text_size + 1 > active_text_field->text_cap) {
-				char* nptr = (char*)realloc(active_text_field->text, active_text_field->text_cap + TEXT_INPUT_CAP);
-				if (!nptr) goto text_field_alloc_failed;
-
-				active_text_field->text = nptr;
-				active_text_field->text_cap += TEXT_INPUT_CAP;
-			}
-
-			active_text_field->text[active_text_field->text_size++] = c;
-			active_text_field->text[active_text_field->text_size] = '\0';
-
-			text_field_alloc_failed: {
-				return true; // Later cases don't require printable, so skip them entirely
-			}
-		} else {
-			switch (key) {
-				case EKeycode_Enter: {
-					if (active_text_field->on_enter) active_text_field->on_enter(active_text_field, active_text_field->text, active_text_field->callback_data);
-					
-					active_text_field->text[0] = '\0';
-					active_text_field->text_size = 0;
-					active_text_field->is_typing = false;
-					active_text_field = NULL;
-					return false;
-				}
-
-				default: break;
-			}
-		}
+		return handle_active_text_input_key_press(key, pressed);
 	}
 
 	if (!event_widgets) return false;

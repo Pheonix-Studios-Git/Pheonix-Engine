@@ -20,6 +20,7 @@ typedef struct PX_Event_TextField {
 	PX_Color4 text_color;
 	size_t text_size;
 	size_t text_cap;
+	size_t text_cursor;
 
 	bool is_typing;
 	bool interacted;

@@ -12,13 +12,15 @@
 
 #include <editor.h>
 
-static PX_EditorState state_raw = {0};
-static PX_EditorState* state = &state_raw;
-
 struct PX_Event_TextField_WIdentifier {
 	PX_Event_TextField text_field;
 	size_t identifier;
+
+	PX_Property* link;
 };
+
+static PX_EditorState state_raw = {0};
+static PX_EditorState* state = &state_raw;
 
 PX_2D_Object* property_cur_2d_object = NULL;
 PX_3D_Object* property_cur_3d_object = NULL;
@@ -98,7 +100,7 @@ static int editor_render_object_3d(PX_AnchorRect lv, PX_Vector2 mpos, PX_3D_Obje
     int x = transform.pos.x;
     int y = transform.pos.y;
 
-    const int line_offset_x = 8;
+    const int line_offset_x = 2;
     const int text_offset_x = 12;
 
     int branch_x = x - line_offset_x;
@@ -117,7 +119,7 @@ static int editor_render_object_3d(PX_AnchorRect lv, PX_Vector2 mpos, PX_3D_Obje
 		lv,
         (PX_Vector2){branch_x, y},
         (PX_Vector2){x + 4, y},
-        1.0f,
+        2.0f,
         iline_color
     );
 
@@ -558,6 +560,27 @@ void editor_click_scene_panel(PX_Vector2 mpos, PX_Transform2 transform, PX_Font*
 	}
 }
 
+static struct PX_Event_TextField_WIdentifier* editor_find_text_field(PX_Property* p) {
+	for (size_t i = 0; i < sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier); i++) {
+		struct PX_Event_TextField_WIdentifier* tfield = &property_text_fields[i];
+		if (tfield->link == p) return tfield;
+	}
+
+	return NULL;
+}
+
+static void editor_onclick_string_property(PX_Event_TextField* self, char* text, void* callback_data) {
+	if (!self || !text || !callback_data) return;
+
+	PX_Property* p = (PX_Property*)callback_data;
+	if (p->size != sizeof(char**)) return;
+
+	if (*(char**)p->data && *(char**)p->data != text) {
+		free(*(char**)p->data);
+		*(char**)p->data = text;
+	}
+}
+
 static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transform2 container, PX_Vector2 mpos, PX_Vector2 cpos, PX_Font* font, float font_size, PX_Color4 text_color) {
 	if (!p || !font || font_size < 1.0f) return;
 	if (!p->label) return;
@@ -576,43 +599,53 @@ static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transfo
 	rpos.x += label_w + 10;
 	switch (p->type) {
 		case PX_RS_PROPERTY_STRING: {
-			if (p->size != sizeof(char**) || property_text_field_ptr >= (sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier))) break;
-
-			struct PX_Event_TextField_WIdentifier* tfield_widen = &property_text_fields[property_text_field_ptr++];
-			PX_Event_TextField* tfield = &tfield_widen->text_field;
-
-			*tfield = (PX_Event_TextField){
-				.on_enter = NULL,
-				.fixed_on_screen = true,
-				.placeholder_text = "Name of Object",
-				.placeholder_color = text_color,
-				.base_text = *(const char**)p->data,
-				.base_color = text_color,
-				.pixel_height = font_size,
-				.font = font,
-				.text_color = text_color,
-				.callback_data = p,
-				.panel = (PX_Panel){
-					.blur = 0.0f,
-					.color = (PX_Color4){0x0, 0x0, 0x0, 0xFF},
-					.cradius = 5.0f,
-					.noise = 0.0f
-				}
-			};
-
-			if (!tfield->is_typing && tfield->text) {
-				*(char**)p->data = tfield->text;
-			}
+			if (p->size != sizeof(char**)) break;
 
 			PX_Transform2 tfield_trans = (PX_Transform2){.pos=rpos, .scale=(PX_Scale2){100, font_size + 6}, .rot=0.0f};
-			PX_Event_Widget widget = {
-				.type = PX_EVENT_WIDGET_TYPE_TEXT_FIELD,
-				.text_field.lvt = lvt,
-				.text_field.transform = tfield_trans,
-				.text_field.tfield = tfield
-			};
+			
+			struct PX_Event_TextField_WIdentifier* tfield_widen = editor_find_text_field(p);
+			PX_Event_TextField* tfield = NULL;
 
-			tfield_widen->identifier = event_register_widget(&widget);
+			if (!tfield_widen) {
+				if (property_text_field_ptr >= (sizeof(property_text_fields)/sizeof(struct PX_Event_TextField_WIdentifier))) break;
+				tfield_widen = &property_text_fields[property_text_field_ptr++];
+
+				tfield = &tfield_widen->text_field;
+				*tfield = (PX_Event_TextField){
+					.on_enter = editor_onclick_string_property,
+					.fixed_on_screen = true,
+					.placeholder_text = "Name of Object",
+					.placeholder_color = text_color,
+					.base_text = *(const char**)p->data,
+					.base_color = text_color,
+					.pixel_height = font_size,
+					.font = font,
+					.text = NULL,
+					.text_size = 0,
+					.text_cap = 0,
+					.text_color = text_color,
+					.callback_data = p,
+					.panel = (PX_Panel){
+						.blur = 0.0f,
+						.color = (PX_Color4){0x0, 0x0, 0x0, 0xFF},
+						.cradius = 5.0f,
+						.noise = 0.0f
+					}
+				};
+			
+				PX_Event_Widget widget = {
+					.type = PX_EVENT_WIDGET_TYPE_TEXT_FIELD,
+					.text_field.lvt = lvt,
+					.text_field.transform = tfield_trans,
+					.text_field.tfield = tfield
+				};
+
+				tfield_widen->identifier = event_register_widget(&widget);
+				tfield_widen->link = p;
+			} else {
+				tfield = &tfield_widen->text_field;
+			}
+
 			event_text_input(lvt, tfield, tfield_trans);
 			break;
 		}
