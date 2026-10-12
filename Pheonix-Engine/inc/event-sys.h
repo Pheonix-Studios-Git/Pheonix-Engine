@@ -4,6 +4,13 @@
 #include <rendering-sys.h>
 #include <font.h>
 
+typedef enum {
+	PX_EVENT_TEXTFIELD_TYPE_NORMAL,
+	PX_EVENT_TEXTFIELD_TYPE_NUMERIC,
+	PX_EVENT_TEXTFIELD_TYPE_ALPHA,
+	PX_EVENT_TEXTFIELD_TYPE_FLOATING
+} PX_Event_TextFieldType;
+
 typedef struct PX_Event_TextField {
 	PX_Panel panel;
 
@@ -24,7 +31,10 @@ typedef struct PX_Event_TextField {
 
 	bool is_typing;
 	bool interacted;
+	bool floating_point_set;
 	bool fixed_on_screen;
+
+	PX_Event_TextFieldType type;
 
 	void* callback_data;
 	void (*on_enter)(struct PX_Event_TextField* self, char* text, void* callback_data);

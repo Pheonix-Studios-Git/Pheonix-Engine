@@ -9,6 +9,8 @@
 #include <rendering-sys.h>
 #include <font.h>
 
+#include <ctype.h>
+
 #include <event-sys/keycodes.h>
 
 #define MAX_GLOBAL_SIGNALS 64
@@ -355,6 +357,23 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 	// IS Key Printable ASCII?
 	char c = px_util_ekeycode_to_char(key, is_caps, is_shift);
 	if (c != '\0') {
+		switch (active_text_field->type) {
+			case PX_EVENT_TEXTFIELD_TYPE_NORMAL: break;
+			case PX_EVENT_TEXTFIELD_TYPE_NUMERIC: { if (!isdigit(c)) { return true; } break; }
+			case PX_EVENT_TEXTFIELD_TYPE_ALPHA: { if (!isalpha(c)) { return true; } break; }
+			case PX_EVENT_TEXTFIELD_TYPE_FLOATING: {
+				if (!isdigit(c) && c == '.') {
+					if (active_text_field->floating_point_set) return true;
+					active_text_field->floating_point_set = true;
+					break;
+				} else if (!isdigit(c)) return true;
+
+				break;
+			}
+			
+			default: break; // Acts as normal type
+		}
+
 		if (!active_text_field->text) {
 			active_text_field->text = (char*)calloc(TEXT_INPUT_CAP, sizeof(char));
 			if (!active_text_field->text) goto text_field_alloc_failed;

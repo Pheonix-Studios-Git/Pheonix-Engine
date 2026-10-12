@@ -41,7 +41,7 @@ static void handle_create_2d_panel(void) {
 	// Connect Properties
 	PX_Property* p_name = px_util_property_add("Name", PX_RS_PROPERTY_STRING, NULL);
 	if (!p_name) {free(panel); return;}
-	p_name->data = NULL; p_name->size = sizeof(char**);
+	p_name->data = NULL; p_name->size = sizeof(char*);
 
 	PX_Property* p_color = px_util_property_add("Color", PX_RS_PROPERTY_COLOR4, p_name);
 	if (!p_color) {px_util_destroy_properties(p_name, NULL); free(panel); return;}

@@ -145,7 +145,7 @@ typedef struct {
 
 typedef struct {
 	PX_Color4 color;
-	float blur;
+	float blur; // NOTE: Unsupported as of now
 	float noise;
 	float cradius;
 } PX_Panel;
