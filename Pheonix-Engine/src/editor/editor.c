@@ -577,6 +577,8 @@ static void editor_onclick_string_property(PX_Event_TextField* self, char* text,
 
 	if (*(char**)p->data && *(char**)p->data != text) {
 		free(*(char**)p->data);
+		
+		p->data_not_owned = true;
 		*(char**)p->data = text;
 	}
 }

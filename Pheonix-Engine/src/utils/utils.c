@@ -125,6 +125,7 @@ PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Pr
 
 	pnode->label = px_util_strdup(label);
 	pnode->type = type;
+	pnode->data_not_owned = false;
 
 	if (!parent) return pnode;
 	parent->next = pnode;
@@ -138,6 +139,7 @@ void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 	while (cur) {
 		if (cur->label) free((void*)cur->label);
 
+		if (cur->data_not_owned) goto next;
 		switch (cur->type) {
 			case PX_RS_PROPERTY_STRING: {
 				if (cur->size != sizeof(char**) || !cur->data) break;
@@ -149,10 +151,12 @@ void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 			default: break;
 		}
 
-		PX_Property* to_free = cur;
-		cur = cur->next;
+		next: {
+			PX_Property* to_free = cur;
+			cur = cur->next;
 
-		free(to_free);
+			free(to_free);
+		}
 	}
 
 	if (field) *field = NULL;

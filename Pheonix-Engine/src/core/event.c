@@ -454,6 +454,17 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 				break;
 			}
 
+			case EKeycode_Home: {
+				if (!active_text_field->text || active_text_field->text_cursor == 0) break;
+				active_text_field->text_cursor = 0;
+				break;
+			}
+			case EKeycode_End: {
+				if (!active_text_field->text || active_text_field->text_cursor == active_text_field->text_size) break;
+				active_text_field->text_cursor = active_text_field->text_size;
+				break;
+			}
+
 			default: break;
 		}
 	}

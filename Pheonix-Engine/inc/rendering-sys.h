@@ -89,6 +89,7 @@ typedef struct PX_Property {
 
     void* data;
 	size_t size;
+	bool data_not_owned; // When true, it specifies data if allocated is not owned by the object/property
 
     float min;
     float max;
