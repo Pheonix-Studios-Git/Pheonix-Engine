@@ -910,7 +910,17 @@ int main(int argc, char** argv) {
 		}
         enginef_core_render();
 
-        px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, (PX_Scale2){engine_window_main_w, engine_window_main_h});
+		switch (editor_state->current_mode) {
+			case PX_EDITOR_MODE_3D: {
+				px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, true);
+				break;
+			}
+			case PX_EDITOR_MODE_2D: {
+				px_rs_handle_mouse_move((PX_Vector2){engine_mouse_x, engine_mouse_y}, false);
+				break;
+			}
+			default: break;
+		}
 
         // Global Signals
         PX_Event_GSignal core_signal = {0};

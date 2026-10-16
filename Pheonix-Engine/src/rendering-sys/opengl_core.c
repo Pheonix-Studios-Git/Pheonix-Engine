@@ -58,7 +58,8 @@ struct ui_renderer {
 
     GLuint blank_tex;
 
-    
+    GLuint flatFBO;
+    GLuint flatColorTex;
 
 	uint32_t screen_x;
 	uint32_t screen_y;
@@ -461,16 +462,18 @@ static void pxgl_2d_ortho(float left, float right, float bottom, float top, floa
     out_mat4[15] = 1.0f;
 }
 
-PX_GPU_Handle px_rs_gl_get_flat_fbo(void) {
-	return (PX_GPU_Handle)gr_gl_3d->flatFBO;
+PX_GPU_Handle px_rs_gl_get_flat_fbo(bool _2d) {
+	if (_2d) return (PX_GPU_Handle)gr_gl_2d->flatFBO;
+	else return (PX_GPU_Handle)gr_gl_3d->flatFBO;
 }
 
 PX_GPU_Handle px_rs_gl_get_blank_tex(void) {
 	return (PX_GPU_Handle)gr_gl_2d->blank_tex;
 }
 
-PX_Scale2 px_rs_gl_get_flat_fbo_scale(void) {
-	return (PX_Scale2){.w=gr_gl_3d->screen_w, .h=gr_gl_3d->screen_h};
+PX_Scale2 px_rs_gl_get_flat_fbo_scale(bool _2d) {
+	if (_2d) return (PX_Scale2){.w=gr_gl_2d->screen_w, .h=gr_gl_2d->screen_h};
+	else return (PX_Scale2){.w=gr_gl_3d->screen_w, .h=gr_gl_3d->screen_h};
 }
 
 t_err_codes px_rs_gl_init(PX_WContext* ctx) {
@@ -540,6 +543,49 @@ t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+
+	glGenFramebuffers(1, &gr_gl_2d->flatFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, gr_gl_2d->flatFBO);
+
+    glGenTextures(1, &gr_gl_2d->flatColorTex);
+    glBindTexture(GL_TEXTURE_2D, gr_gl_2d->flatColorTex);
+
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA8,
+        (GLsizei)t.scale.w,
+        (GLsizei)t.scale.h,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        NULL
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D,
+        gr_gl_2d->flatColorTex,
+        0
+    );
+
+    GLenum buffers[] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, buffers);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        fprintf(stderr, "Error: FBO creation failed: 0x%x\n", status);
+        px_rs_gl_shutdown();
+        return ERR_INTERNAL;
+    }
+
+    glViewport((GLint)t.pos.x, (GLint)t.pos.y, (GLsizei)t.scale.w, (GLsizei)t.scale.h);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     glGenVertexArrays(1, &gr_gl_2d->vao);
     glGenBuffers(1, &gr_gl_2d->vbo);
@@ -712,6 +758,8 @@ void px_rs_gl_shutdown_2d(void) {
         return;
 
     if (gr_gl_2d->blank_tex) glDeleteTextures(1, &gr_gl_2d->blank_tex);
+	if (gr_gl_3d->flatFBO) glDeleteFramebuffers(1, &gr_gl_3d->flatFBO);
+    if (gr_gl_3d->flatColorTex) glDeleteTextures(1, &gr_gl_3d->flatColorTex);
 
     if (gr_gl_2d->vbo) glDeleteBuffers(1, &gr_gl_2d->vbo);
     if (gr_gl_2d->vao) glDeleteVertexArrays(1, &gr_gl_2d->vao);
@@ -1188,29 +1236,29 @@ void px_rs_gl_3d_resize(PX_AnchorRect viewport) {
     glViewport((GLint)t.pos.x, (GLint)t.pos.y, (GLsizei)t.scale.w, (GLsizei)t.scale.h);
 }
 
-void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
-	(void)screen_scale;
-    int64_t local_x = mpos.x - gr_gl_3d->screen_x;
-	int64_t local_y = mpos.y - gr_gl_3d->screen_y;
+void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, bool _2d) {
+    double local_x = (double)mpos.x - (double)(_2d ? gr_gl_2d->screen_x : gr_gl_3d->screen_x);
+	double local_y = (double)mpos.y - (double)(_2d ? gr_gl_2d->screen_y : gr_gl_3d->screen_y);
 
 	if (
-		local_x < 0 ||
-		local_y < 0 ||
-		local_x >= (int64_t)gr_gl_3d->screen_w ||
-		local_y >= (int64_t)gr_gl_3d->screen_h
+		local_x < 0.0f ||
+		local_y < 0.0f ||
+		local_x >= (double)(_2d ? gr_gl_2d->screen_w : gr_gl_3d->screen_w) ||
+		local_y >= (double)(_2d ? gr_gl_2d->screen_h : gr_gl_3d->screen_h)
 	) {
 		return;
 	}
 
-	local_y = gr_gl_3d->screen_h - local_y - 1;
+	int64_t tlocal_x = (int64_t)local_x;
+    int64_t tlocal_y = (int64_t)(_2d ? gr_gl_2d->screen_h : gr_gl_3d->screen_h) - (int64_t)local_y - 1;
 
     uint8_t pixel[4];
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, gr_gl_3d->flatFBO);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (_2d ? gr_gl_2d->flatFBO : gr_gl_3d->flatFBO));
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glReadPixels(
-        local_x,
-        local_y,
+        (GLint)tlocal_x,
+        (GLint)tlocal_y,
         1,
         1,
         GL_RGBA,
@@ -1223,6 +1271,8 @@ void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
     uint8_t subId = pixel[3];
 
     if (subId <= 0) return; // Nothing there
+
+	printf("Hover deteced on FlatFBO!\n");
 }
 
 t_err_codes px_rs_gl_create_texture(PX_Texture* texture) {

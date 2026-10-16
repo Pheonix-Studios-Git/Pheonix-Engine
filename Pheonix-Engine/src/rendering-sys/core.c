@@ -602,11 +602,19 @@ static void push_3d_batch(struct batch_3d* b) {
     gr_batch_3d->batch_count++;
 }
 
-static PX_GPU_Handle get_flat_fbo(void) {
+static PX_GPU_Handle get_flat_fbo(bool _2d) {
 	switch (current_backend) {
-		case PX_RS_GPU_BACKEND_OPENGL: return px_rs_gl_get_flat_fbo();
-		case PX_RS_GPU_BACKEND_VULKAN: return px_rs_vk_get_flat_fbo();
+		case PX_RS_GPU_BACKEND_OPENGL: return px_rs_gl_get_flat_fbo(_2d);
+		case PX_RS_GPU_BACKEND_VULKAN: return px_rs_vk_get_flat_fbo(_2d);
 		default: return PX_RS_GPU_INVALID_HANDLE;
+	}
+}
+
+static PX_Scale2 get_flat_fbo_scale(bool _2d) {
+	switch (current_backend) {
+		case PX_RS_GPU_BACKEND_OPENGL: return px_rs_gl_get_flat_fbo_scale(_2d);
+		case PX_RS_GPU_BACKEND_VULKAN: return px_rs_vk_get_flat_fbo_scale(_2d);
+		default: return (PX_Scale2){0};
 	}
 }
 
@@ -1120,12 +1128,8 @@ t_err_codes px_rs_draw_dropdown(PX_AnchorRect local_viewport, PX_Dropdown* dd) {
 t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
 
-	PX_Scale2 sscale = (PX_Scale2){0};
-	switch (current_backend) {
-		case PX_RS_GPU_BACKEND_OPENGL: sscale = px_rs_gl_get_flat_fbo_scale(); break;
-		case PX_RS_GPU_BACKEND_VULKAN: sscale = px_rs_vk_get_flat_fbo_scale(); break;
-		default: return ERR_RS_INVALID_BACKEND;
-	}
+	PX_Scale2 sscale = get_flat_fbo_scale(false);
+	if (sscale.w < 1 || sscale.h < 1) return ERR_INTERNAL;
 
     for (size_t i = 0; i < scene->editor_object_count; i++) {
         struct batch_3d batch = {0};
@@ -1173,13 +1177,13 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
                 
                 // Picker
                 PX_Color3 main_color = {
-                    .r = 0xFF, //obj->id & 0xFF,
-                    .g = (obj->id >> 8) & 0xFF,
-                    .b = obj->type
+                    .r = (uint8_t)(obj->id & 0xFF),
+                    .g = (uint8_t)((obj->id >> 8) & 0xFF),
+                    .b = (uint8_t)obj->type
                 };
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GXep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PX_GPU_Handle)get_flat_fbo();
+                batch.fbo = (PX_GPU_Handle)get_flat_fbo(false);
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1189,7 +1193,7 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
                 push_3d_batch(&batch);
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GYep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PX_GPU_Handle)get_flat_fbo();
+                batch.fbo = (PX_GPU_Handle)get_flat_fbo(false);
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1199,7 +1203,7 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
                 push_3d_batch(&batch);
                 push_3d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, finalT, GZep, 4.0f, &batch);
                 batch.depth_override = true;
-                batch.fbo = (PX_GPU_Handle)get_flat_fbo();
+                batch.fbo = (PX_GPU_Handle)get_flat_fbo(false);
                 batch.switch_fbo = true;
                 batch.pure_color = true;
                 batch.fbo_x = 0;
@@ -1218,6 +1222,9 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene) {
 t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene) {
 	if (!scene) return ERR_INVALID_ARGUMENTS;
 	PX_Transform2 lvt = px_util_convert_anchor_to_transform(local_viewport);
+
+	PX_Scale2 sscale = get_flat_fbo_scale(true);
+	if (sscale.w < 1 || sscale.h < 1) return ERR_INTERNAL;
 
     for (size_t i = 0; i < scene->editor_object_count; i++) {
         struct batch_2d batch = {0};
@@ -1246,11 +1253,13 @@ t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_
 
 				if (!clip_line_to_container(&gizmoT.pos, &GXep, lvt)) continue;
 				if (!is_transform_visible(gizmoT, lvt)) continue;
+
+				PX_Transform2 gizmoXT = gizmoT;
 				
 				if (obj->ex_data && *(bool*)obj->ex_data)
-                    push_2d_line((PX_Color4){0x75,0x0,0x0,0xFF}, gizmoT.pos, GXep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0x75,0x0,0x0,0xFF}, gizmoXT.pos, GXep, 4.0f, &batch);
                 else
-                    push_2d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, gizmoT.pos, GXep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0xFF,0x0,0x0,0xFF}, gizmoXT.pos, GXep, 4.0f, &batch);
                 
                 push_2d_batch(&batch);
 
@@ -1260,19 +1269,41 @@ t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_
 				if (!clip_line_to_container(&gizmoT.pos, &GYep, lvt)) continue;
 				if (!is_transform_visible(gizmoT, lvt)) continue;
 
+				PX_Transform2 gizmoYT = gizmoT;
+
                 if (obj->ex_data && *(bool*)obj->ex_data)
-                    push_2d_line((PX_Color4){0x0,0x75,0x0,0xFF}, gizmoT.pos, GYep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0x0,0x75,0x0,0xFF}, gizmoYT.pos, GYep, 4.0f, &batch);
                 else
-                    push_2d_line((PX_Color4){0x0,0xFF,0x0,0xFF}, gizmoT.pos, GYep, 4.0f, &batch);
+                    push_2d_line((PX_Color4){0x0,0xFF,0x0,0xFF}, gizmoYT.pos, GYep, 4.0f, &batch);
                 
                 push_2d_batch(&batch);
                 
                 // Picker
-                // PX_Color3 main_color = {
-                //     .r = 0xFF, //obj->id & 0xFF,
-                //     .g = (obj->id >> 8) & 0xFF,
-                //     .b = obj->type
-                // };
+                PX_Color3 main_color = {
+                    .r = (uint8_t)(obj->id & 0xFF),
+                    .g = (uint8_t)((obj->id >> 8) & 0xFF),
+                    .b = (uint8_t)obj->type
+                };
+
+				push_2d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, gizmoXT.pos, GXep, 4.0f, &batch);
+                batch.fbo = (PX_GPU_Handle)get_flat_fbo(true);
+                batch.switch_fbo = true;
+                batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = sscale.w;
+                batch.fbo_h = sscale.h;
+                push_2d_batch(&batch);
+
+				push_2d_line((PX_Color4){main_color.r, main_color.g, main_color.b, 0xFF}, gizmoYT.pos, GYep, 4.0f, &batch);
+                batch.fbo = (PX_GPU_Handle)get_flat_fbo(true);
+                batch.switch_fbo = true;
+                batch.pure_color = true;
+                batch.fbo_x = 0;
+                batch.fbo_y = 0;
+                batch.fbo_w = sscale.w;
+                batch.fbo_h = sscale.h;
+                push_2d_batch(&batch);
 				break;
             }
             default: continue;
@@ -1351,10 +1382,10 @@ t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene
     return ERR_SUCCESS;
 }
 
-void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {
+void px_rs_handle_mouse_move(PX_Vector2 mpos, bool _2d) {
 	switch (current_backend) {
-		case PX_RS_GPU_BACKEND_OPENGL: px_rs_gl_handle_mouse_move(mpos, screen_scale); break;
-		case PX_RS_GPU_BACKEND_VULKAN: px_rs_vk_handle_mouse_move(mpos, screen_scale); break;
+		case PX_RS_GPU_BACKEND_OPENGL: px_rs_gl_handle_mouse_move(mpos, _2d); break;
+		case PX_RS_GPU_BACKEND_VULKAN: px_rs_vk_handle_mouse_move(mpos, _2d); break;
 		default: return;
 	}
 }

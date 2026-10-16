@@ -505,7 +505,7 @@ t_err_codes px_rs_draw_editor_objects_3d(PX_Scene_3D* scene); // Draw 3D Editor 
 t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene); // Draw all 3D Objects in Viewport
 t_err_codes px_rs_draw_editor_objects_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene); // Draw 2D Editor Objects on Screen
 t_err_codes px_rs_draw_scene_2d(PX_AnchorRect local_viewport, PX_Scene_2D* scene); // Draw all 2D Objects on Screen
-void px_rs_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale); // Handle Mouse Movement for Events and more
+void px_rs_handle_mouse_move(PX_Vector2 mpos, bool _2d); // Handle Mouse Movement for Events and more
 t_err_codes px_rs_change_backend(PX_GPU_Backend new_backend); // Change GPU API Backend
 
 // Extra

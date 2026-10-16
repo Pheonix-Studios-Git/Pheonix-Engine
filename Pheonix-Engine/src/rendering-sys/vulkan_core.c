@@ -1022,10 +1022,10 @@ void px_rs_vk_3d_frame_update(void) {}
 void px_rs_vk_frame_update(void) {}
 void px_rs_vk_2d_resize(PX_AnchorRect viewport) {}
 void px_rs_vk_3d_resize(PX_AnchorRect viewport) {}
-PX_GPU_Handle px_rs_vk_get_flat_fbo(void) { return PX_RS_GPU_INVALID_HANDLE; }
+PX_GPU_Handle px_rs_vk_get_flat_fbo(bool _2d) { return PX_RS_GPU_INVALID_HANDLE; }
 PX_GPU_Handle px_rs_vk_get_blank_tex(void) { return PX_RS_GPU_INVALID_HANDLE; }
-PX_Scale2 px_rs_vk_get_flat_fbo_scale(void) { return (PX_Scale2){0}; }
-void px_rs_vk_handle_mouse_move(PX_Vector2 mpos, PX_Scale2 screen_scale) {}
+PX_Scale2 px_rs_vk_get_flat_fbo_scale(bool _2d) { return (PX_Scale2){0}; }
+void px_rs_vk_handle_mouse_move(PX_Vector2 mpos, bool _2d) {}
 t_err_codes px_rs_vk_create_texture(PX_Texture* texture) { return ERR_UNIMPLEMENTED; }
 t_err_codes px_rs_vk_upload_texture(PX_Texture* texture, PX_TextureFormat source_format, uint32_t mip_level, const void* data) { return ERR_UNIMPLEMENTED; }
 t_err_codes px_rs_vk_set_sampler(PX_Texture* texture, PX_Sampler* sampler) { return ERR_UNIMPLEMENTED; }
