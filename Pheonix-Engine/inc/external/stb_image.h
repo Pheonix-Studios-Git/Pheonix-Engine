@@ -129,6 +129,8 @@ RECENT REVISION HISTORY:
 #ifndef STBI_INCLUDE_STB_IMAGE_H
 #define STBI_INCLUDE_STB_IMAGE_H
 
+#include <core/stdlib_pstdlib_connector.h>
+
 // DOCUMENTATION
 //
 // Limitations:

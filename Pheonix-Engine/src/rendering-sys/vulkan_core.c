@@ -1,11 +1,8 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <string.h>
-#include <stdio.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+
 #include <math.h>
 #include <dlfcn.h>
-
 #include <cglm/cglm.h>
 
 #define __PHEONIX_ENGINE__WINDOW_SYS__VULKAN_SPECIFIC_INC__
@@ -155,27 +152,27 @@ static t_err_codes pxvk_load_extensions_and_layers(const char** needed_layers, s
 
     VkExtensionProperties* extensions = NULL;
     if (extension_count > 0) {
-        extensions = malloc(sizeof(VkExtensionProperties) * extension_count);
+        extensions = alloc(sizeof(VkExtensionProperties) * extension_count);
         if (!extensions) return ERR_ALLOC_FAILED;
 
         result = gr_vk_loader.EnumerateInstanceExtensionProperties(VK_NULL_HANDLE, &extension_count, extensions);
         if (result != VK_SUCCESS) {
-            free(extensions);
+            dealloc(extensions);
             return ERR_VK_EXTENSION_ENUMERATION_FAILED;
         }
     }
 
 	size_t loaded_ext = 0;
     for (uint32_t i = 0; i < extension_count; i++) {
-        printf("[Vulkan] Found Vulkan Extension: %s\n", extensions[i].extensionName);
+        fprint("[Vulkan] Found Vulkan Extension: %s\n", extensions[i].extensionName);
 		for (size_t j = 0; j < needed_ext_count; j++) {
 			if (strcmp(extensions[i].extensionName, needed_extensions[j]) == 0) {
 				loaded_ext++;
-				printf("\tLoaded Vulkan Extension\n");
+				fprint("\tLoaded Vulkan Extension\n");
 			}
 		}
     }
-    free(extensions);
+    dealloc(extensions);
 
 	if (loaded_ext != needed_ext_count) return ERR_VK_LAYER_ENUMERATION_FAILED;
 
@@ -185,27 +182,27 @@ static t_err_codes pxvk_load_extensions_and_layers(const char** needed_layers, s
 
     VkLayerProperties* layers = NULL;
     if (layer_count > 0) {
-        layers = malloc(sizeof(VkLayerProperties) * layer_count);
+        layers = alloc(sizeof(VkLayerProperties) * layer_count);
         if (!layers) return ERR_ALLOC_FAILED;
 
         result = gr_vk_loader.EnumerateInstanceLayerProperties(&layer_count, layers);
         if (result != VK_SUCCESS) {
-            free(layers);
+            dealloc(layers);
             return ERR_VK_LAYER_ENUMERATION_FAILED;
         }
     }
 
 	size_t loaded_layers = 0;
     for (uint32_t i = 0; i < layer_count; i++) {
-        printf("[Vulkan] Found Vulkan layer: %s\n", layers[i].layerName);
+        fprint("[Vulkan] Found Vulkan layer: %s\n", layers[i].layerName);
 		for (size_t j = 0; j < needed_layer_count; j++) {
 			if (strcmp(layers[i].layerName, needed_layers[j]) == 0) {
 				loaded_layers++;
-				printf("\tLoaded Vulkan Layer\n");
+				fprint("\tLoaded Vulkan Layer\n");
 			}
 		}
     }
-    free(layers);
+    dealloc(layers);
 
 	if (loaded_layers != needed_layer_count) return ERR_VK_LAYER_ENUMERATION_FAILED;
     return ERR_SUCCESS;
@@ -264,17 +261,17 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 
 	VkResult result = gr_vk_loader.EnumeratePhysicalDevices(gr_vk_base->instance, &device_count, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS || device_count == 0) {
-		fprintf(stderr, "[Vulkan] No Physical Devices found!\n");
+		fprints(s_stderr, "[Vulkan] No Physical Devices found!\n");
 		return ERR_VK_PHYSICAL_DEVICE_ENUMERATION_FAILED;
 	}
 
-	VkPhysicalDevice* devices = (VkPhysicalDevice*)malloc(sizeof(VkPhysicalDevice) * device_count);
+	VkPhysicalDevice* devices = (VkPhysicalDevice*)alloc(sizeof(VkPhysicalDevice) * device_count);
 	if (!devices) return ERR_ALLOC_FAILED;
 
 	result = gr_vk_loader.EnumeratePhysicalDevices(gr_vk_base->instance, &device_count, devices);
 	if (result != VK_SUCCESS) {
-		free(devices);
-		fprintf(stderr, "[Vulkan] Failed to enumerate Physical Devices!\n");
+		dealloc(devices);
+		fprints(s_stderr, "[Vulkan] Failed to enumerate Physical Devices!\n");
 
 		return ERR_VK_PHYSICAL_DEVICE_ENUMERATION_FAILED;
 	}
@@ -294,12 +291,12 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 		VkPhysicalDeviceMemoryProperties mem_properties;
 		gr_vk_loader.GetPhysicalDeviceMemoryProperties(devices[i], &mem_properties);
 
-		printf("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
+		fprint("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
 
-		printf("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
-		printf("\tDriver: %u\n", properties.driverVersion);
-		printf("\tVendor: 0x%04x\n", properties.vendorID);
-		printf("\tDevice: 0x%04x\n", properties.deviceID);
+		fprint("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
+		fprint("\tDriver: %u\n", properties.driverVersion);
+		fprint("\tVendor: 0x%04x\n", properties.vendorID);
+		fprint("\tDevice: 0x%04x\n", properties.deviceID);
 
 		VkSurfaceCapabilitiesKHR capabilities;
 		result = gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR(devices[i], surfaceKHR, &capabilities);
@@ -318,18 +315,18 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 		if (queue_count == 0) {
 			cont_without_score_error = "No Queue Families";
 			continue_without_score: {
-				printf("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
+				fprint("[Vulkan] Found GPU %u: %s\n", i, properties.deviceName);
 
-				printf("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
-				printf("\tDriver: %u\n", properties.driverVersion);
-				printf("\tVendor: 0x%04x\n", properties.vendorID);
-				printf("\tDevice: 0x%04x\n", properties.deviceID);
-				printf("\tScore: 0 (%s)\n", cont_without_score_error);
+				fprint("\tAPI: %u.%u.%u\n", VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion));
+				fprint("\tDriver: %u\n", properties.driverVersion);
+				fprint("\tVendor: 0x%04x\n", properties.vendorID);
+				fprint("\tDevice: 0x%04x\n", properties.deviceID);
+				fprint("\tScore: 0 (%s)\n", cont_without_score_error);
 				continue;
 			}
 		}
 
-		VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)malloc(sizeof(VkQueueFamilyProperties)*queue_count);
+		VkQueueFamilyProperties* queue_families = (VkQueueFamilyProperties*)alloc(sizeof(VkQueueFamilyProperties)*queue_count);
 		if (!queue_families) {
 			cont_without_score_error = "Memory Allocation Failed";
 			goto continue_without_score;
@@ -340,13 +337,13 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 		int64_t graphics_queue = -1; // To use -1 as a invalid signal
 		int64_t present_queue = -1;
 
-		printf("\tQueue Families:\n");
+		fprint("\tQueue Families:\n");
 		for (uint32_t j = 0; j < queue_count; j++) {
 			VkQueueFamilyProperties* qfp = &queue_families[j];
 
-			printf("\tQueue Family %u:\n", j);
-			printf("\t\tQueues: %u\n", qfp->queueCount);
-			printf("\t\tFlags: 0x%04x\n", qfp->queueFlags);
+			fprint("\tQueue Family %u:\n", j);
+			fprint("\t\tQueues: %u\n", qfp->queueCount);
+			fprint("\t\tFlags: 0x%04x\n", qfp->queueFlags);
 			if (qfp->queueCount < 1) continue;
 
 			if (qfp->queueFlags & VK_QUEUE_GRAPHICS_BIT) graphics_queue = (int64_t)j;
@@ -360,7 +357,7 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 		}
 
 		if (graphics_queue < 0 || present_queue < 0) {
-			free(queue_families);
+			dealloc(queue_families);
 			continue;
 		}
 
@@ -378,21 +375,21 @@ static t_err_codes pxvk_load_best_gpu(struct vulkan_physical_device* out, VkSurf
 			best_device.present_queue_family_idx = (uint32_t)present_queue;
 			best_device.queue_families = queue_families;
 		} else {
-			free(queue_families);
+			dealloc(queue_families);
 		}
 
-		printf("\tVideo RAM: %.2f %s\n", pxvk_beautify_bytes_value(vram), pxvk_beautify_bytes_unit(vram));
-		printf("\tScore: %zu\n", score);
+		fprint("\tVideo RAM: %.2f %s\n", pxvk_beautify_bytes_value(vram), pxvk_beautify_bytes_unit(vram));
+		fprint("\tScore: %zu\n", score);
 	}
-	free(devices);
+	dealloc(devices);
 
 	if (best_score == 0) {
-		fprintf(stderr, "[Vulkan] No Applicable GPU Found!\n");
+		fprints(s_stderr, "[Vulkan] No Applicable GPU Found!\n");
 		return ERR_VK_PHYSICAL_DEVICE_ENUMERATION_FAILED;
 	}
 	
 	*out = best_device;
-    printf("[Vulkan] Selected GPU: %s (Score: %zu)\n", best_device.properties.deviceName, best_score);
+    fprint("[Vulkan] Selected GPU: %s (Score: %zu)\n", best_device.properties.deviceName, best_score);
 	
 	return ERR_SUCCESS;
 }
@@ -401,9 +398,9 @@ static void pxvk_destroy_physical_device(struct vulkan_physical_device* pdev) {
 	if (!pdev) return;
 	if (!pdev->queue_families) return;
 
-	free(pdev->queue_families);
+	dealloc(pdev->queue_families);
 
-	memset(pdev, 0, sizeof(struct vulkan_physical_device));
+	fillbuf(pdev, 0, sizeof(struct vulkan_physical_device));
 }
 
 static t_err_codes pxvk_choose_surface_format(VkSurfaceFormatKHR* out, VkSurfaceFormatKHR* formats, uint32_t format_count) {
@@ -482,7 +479,7 @@ static t_err_codes pxvk_create_device(VkDevice* out, struct vulkan_physical_devi
     VkResult result = gr_vk_loader.CreateDevice(pdev->device, &device_info, VK_NULL_HANDLE, out);
 
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "[Vulkan] Failed to create logical device!\n");
+        fprints(s_stderr, "[Vulkan] Failed to create logical device!\n");
         return ERR_VK_DEVICE_CREATION_FAILED;
     }
 
@@ -496,7 +493,7 @@ static void pxvk_destroy_device(struct vulkan_device* device) {
 	if (gr_vk_loader.DestroyDevice) {
 		gr_vk_loader.DestroyDevice(device->device, VK_NULL_HANDLE);
 	}
-	memset(device, 0, sizeof(struct vulkan_device));
+	fillbuf(device, 0, sizeof(struct vulkan_device));
 }
 
 static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vulkan_physical_device* pdev) {
@@ -509,7 +506,7 @@ static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vu
 	VkResult result = gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities);
 
 	if (result != VK_SUCCESS) {
-		fprintf(stderr, "[Vulkan] Failed to get surface capabilities!\n");
+		fprints(s_stderr, "[Vulkan] Failed to get surface capabilities!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
@@ -517,52 +514,52 @@ static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vu
 	result = gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, VK_NULL_HANDLE);
 
 	if (result != VK_SUCCESS || format_count == 0) {
-		fprintf(stderr, "[Vulkan] Failed to get surface formats!\n");
+		fprints(s_stderr, "[Vulkan] Failed to get surface formats!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
-	VkSurfaceFormatKHR* formats = (VkSurfaceFormatKHR*)malloc(sizeof(VkSurfaceFormatKHR) * format_count);
+	VkSurfaceFormatKHR* formats = (VkSurfaceFormatKHR*)alloc(sizeof(VkSurfaceFormatKHR) * format_count);
 	if (!formats) return ERR_ALLOC_FAILED;
 
 	result = gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, formats);
 	if (result != VK_SUCCESS) {
-		free(formats);
-		fprintf(stderr, "[Vulkan] Failed to retrieve surface formats!\n");
+		dealloc(formats);
+		fprints(s_stderr, "[Vulkan] Failed to retrieve surface formats!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
 	VkSurfaceFormatKHR surface_format;
 	t_err_codes err = pxvk_choose_surface_format(&surface_format, formats, format_count);
-	free(formats);
+	dealloc(formats);
 
 	if (err != ERR_SUCCESS) return err;
 
 	uint32_t present_mode_count = 0;
 	result = gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS || present_mode_count == 0) {
-		fprintf(stderr, "[Vulkan] Failed to get present modes!\n");
+		fprints(s_stderr, "[Vulkan] Failed to get present modes!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
-	VkPresentModeKHR* present_modes = malloc(sizeof(VkPresentModeKHR) * present_mode_count);
+	VkPresentModeKHR* present_modes = alloc(sizeof(VkPresentModeKHR) * present_mode_count);
 	if (!present_modes) return ERR_ALLOC_FAILED;
 
 	result = gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, present_modes);
 	if (result != VK_SUCCESS) {
-		free(present_modes);
-		fprintf(stderr, "[Vulkan] Failed to retrieve present modes!\n");
+		dealloc(present_modes);
+		fprints(s_stderr, "[Vulkan] Failed to retrieve present modes!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
 	VkPresentModeKHR present_mode;
 	err = pxvk_choose_present_mode(&present_mode, present_modes, present_mode_count);
-	free(present_modes);
+	dealloc(present_modes);
 
 	if (err != ERR_SUCCESS) return err;
 
 	VkExtent2D extent = pxvk_choose_extent(&capabilities);
 	if (extent.width == 0 || extent.height == 0) {
-		fprintf(stderr, "[Vulkan] Invalid swapchain extent! (%ux%u)\n", extent.width, extent.height);
+		fprints(s_stderr, "[Vulkan] Invalid swapchain extent! (%ux%u)\n", extent.width, extent.height);
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
@@ -608,20 +605,20 @@ static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vu
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	result = gr_vk_loader.CreateSwapchainKHR(gr_vk_base->device.device, &create_info, VK_NULL_HANDLE, &swapchain);
 	if (result != VK_SUCCESS) {
-		fprintf(stderr, "[Vulkan] Failed to create swapchain!\n");
+		fprints(s_stderr, "[Vulkan] Failed to create swapchain!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
 	uint32_t actual_image_count = 0;
 	result = gr_vk_loader.GetSwapchainImagesKHR(gr_vk_base->device.device, swapchain, &actual_image_count, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS || actual_image_count == 0) {
-		fprintf(stderr, "[Vulkan] Failed to get swapchain image count!\n");
+		fprints(s_stderr, "[Vulkan] Failed to get swapchain image count!\n");
 		gr_vk_loader.DestroySwapchainKHR(gr_vk_base->device.device,swapchain, VK_NULL_HANDLE);
 		
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
-	VkImage* images = (VkImage*)malloc(sizeof(VkImage) * actual_image_count);
+	VkImage* images = (VkImage*)alloc(sizeof(VkImage) * actual_image_count);
 	if (!images) {
 		gr_vk_loader.DestroySwapchainKHR(gr_vk_base->device.device, swapchain, VK_NULL_HANDLE);
 		return ERR_ALLOC_FAILED;
@@ -629,10 +626,10 @@ static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vu
 
 	result = gr_vk_loader.GetSwapchainImagesKHR( gr_vk_base->device.device, swapchain, &actual_image_count, images);
 	if (result != VK_SUCCESS) {
-		free(images);
+		dealloc(images);
 		gr_vk_loader.DestroySwapchainKHR(gr_vk_base->device.device, swapchain, VK_NULL_HANDLE);
 		
-		fprintf(stderr, "[Vulkan] Failed to retrieve swapchain images!\n");
+		fprints(s_stderr, "[Vulkan] Failed to retrieve swapchain images!\n");
 		return ERR_VK_SWAPCHAIN_CREATION_FAILED;
 	}
 
@@ -643,7 +640,7 @@ static t_err_codes pxvk_create_swapchain(struct vulkan_swapchain* out, struct vu
 	out->image_count = actual_image_count;
 	out->image_views = VK_NULL_HANDLE;
 
-	printf("[Vulkan] Swapchain created: %ux%u, %u images\n", extent.width, extent.height, actual_image_count);
+	fprint("[Vulkan] Swapchain created: %ux%u, %u images\n", extent.width, extent.height, actual_image_count);
 	return ERR_SUCCESS;
 }
 
@@ -655,8 +652,8 @@ static void pxvk_destroy_swapchain(struct vulkan_swapchain* swapchain, struct vu
 		gr_vk_loader.DestroySwapchainKHR(device->device, swapchain->swapchain, VK_NULL_HANDLE);
 	}
 
-	if (swapchain->images) free(swapchain->images);
-	memset(swapchain, 0, sizeof(struct vulkan_swapchain));
+	if (swapchain->images) dealloc(swapchain->images);
+	fillbuf(swapchain, 0, sizeof(struct vulkan_swapchain));
 }
 
 t_err_codes px_rs_vk_init(PX_WContext* ctx) {
@@ -667,33 +664,33 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 	vkli.lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 	if (!vkli.lib) {
 		const char* err = dlerror();
-		fprintf(stderr, "[Vulkan] Failed to load libvulkan.so.1\n");
-		fprintf(stderr, "[Vulkan] dlerror: %s\n", err ? err : "unknown error");
+		fprints(s_stderr, "[Vulkan] Failed to load libvulkan.so.1\n");
+		fprints(s_stderr, "[Vulkan] dlerror: %s\n", err ? err : "unknown error");
 
 		return ERR_VK_LIB_LOAD_FAILED;
 	}
 
 	vkli.GetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)dlsym(vkli.lib, "vkGetInstanceProcAddr");
 	if (!vkli.GetInstanceProcAddr) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetInstanceProcAddr'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetInstanceProcAddr'\n");
 		goto fail;
 	}
 
 	vkli.CreateInstance = (PFN_vkCreateInstance)vkli.GetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance");
 	if (!vkli.CreateInstance) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkCreateInstance'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkCreateInstance'\n");
 		goto fail;
 	}
 
     vkli.EnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)vkli.GetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties");
 	if (!vkli.EnumerateInstanceExtensionProperties) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkEnumerateInstanceExtensionProperties'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkEnumerateInstanceExtensionProperties'\n");
 		goto fail;
 	}
 
     vkli.EnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)vkli.GetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceLayerProperties");
 	if (!vkli.EnumerateInstanceLayerProperties) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkEnumerateInstanceLayerProperties'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkEnumerateInstanceLayerProperties'\n");
 		goto fail;
 	}
 
@@ -737,7 +734,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DestroyInstance = (PFN_vkDestroyInstance)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDestroyInstance");
 	if (!gr_vk_loader.DestroyInstance) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroyInstance'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDestroyInstance'\n");
 
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
 		goto late_fail;
@@ -745,7 +742,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.EnumeratePhysicalDevices = (PFN_vkEnumeratePhysicalDevices)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkEnumeratePhysicalDevices");
 	if (!gr_vk_loader.EnumeratePhysicalDevices) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkEnumeratePhysicalDevices'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkEnumeratePhysicalDevices'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -754,7 +751,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceFeatures = (PFN_vkGetPhysicalDeviceFeatures)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceFeatures");
 	if (!gr_vk_loader.GetPhysicalDeviceFeatures) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceFeatures'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceFeatures'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -763,7 +760,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceProperties");
 	if (!gr_vk_loader.GetPhysicalDeviceProperties) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceProperties'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceProperties'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -772,7 +769,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceMemoryProperties = (PFN_vkGetPhysicalDeviceMemoryProperties)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceMemoryProperties");
 	if (!gr_vk_loader.GetPhysicalDeviceMemoryProperties) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceMemoryProperties'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceMemoryProperties'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -781,7 +778,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
 	if (!gr_vk_loader.GetPhysicalDeviceQueueFamilyProperties) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceQueueFamilyProperties'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceQueueFamilyProperties'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -790,7 +787,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceSurfaceSupportKHR = (PFN_vkGetPhysicalDeviceSurfaceSupportKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceSupportKHR");
 	if (!gr_vk_loader.GetPhysicalDeviceSurfaceSupportKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceSupportKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceSupportKHR'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -799,7 +796,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR = (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
 	if (!gr_vk_loader.GetPhysicalDeviceSurfaceCapabilitiesKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceCapabilitiesKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceCapabilitiesKHR'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -808,7 +805,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR = (PFN_vkGetPhysicalDeviceSurfaceFormatsKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
 	if (!gr_vk_loader.GetPhysicalDeviceSurfaceFormatsKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceFormatsKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfaceFormatsKHR'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -817,7 +814,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR = (PFN_vkGetPhysicalDeviceSurfacePresentModesKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
 	if (!gr_vk_loader.GetPhysicalDeviceSurfacePresentModesKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfacePresentModesKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetPhysicalDeviceSurfacePresentModesKHR'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -826,7 +823,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkGetDeviceProcAddr");
 	if (!gr_vk_loader.GetDeviceProcAddr) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceProcAddr'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceProcAddr'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -835,7 +832,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.CreateDevice = (PFN_vkCreateDevice)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkCreateDevice");
 	if (!gr_vk_loader.CreateDevice) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkCreateDevice'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkCreateDevice'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -844,7 +841,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DestroyDevice = (PFN_vkDestroyDevice)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDestroyDevice");
 	if (!gr_vk_loader.DestroyDevice) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroyDevice'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDestroyDevice'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -853,7 +850,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DestroySurfaceKHR = (PFN_vkDestroySurfaceKHR)gr_vk_loader.GetInstanceProcAddr(gr_vk_base->instance, "vkDestroySurfaceKHR");
 	if (!gr_vk_loader.DestroySurfaceKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroySurfaceKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDestroySurfaceKHR'\n");
 		
 		gr_vk_loader.DestroyInstance(gr_vk_base->instance, VK_NULL_HANDLE);
 		late_err_code = ERR_VK_LIB_LOAD_FAILED;
@@ -887,7 +884,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DeviceWaitIdle = (PFN_vkDeviceWaitIdle)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkDeviceWaitIdle");
 	if (!gr_vk_loader.DeviceWaitIdle) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDeviceWaitIdle'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDeviceWaitIdle'\n");
 		
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -898,7 +895,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetDeviceQueue = (PFN_vkGetDeviceQueue)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkGetDeviceQueue");
 	if (!gr_vk_loader.GetDeviceQueue) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceQueue'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetDeviceQueue'\n");
 
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -909,7 +906,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.CreateSwapchainKHR = (PFN_vkCreateSwapchainKHR)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkCreateSwapchainKHR");
 	if (!gr_vk_loader.CreateSwapchainKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkCreateSwapchainKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkCreateSwapchainKHR'\n");
 
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -920,7 +917,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DestroySwapchainKHR = (PFN_vkDestroySwapchainKHR)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkDestroySwapchainKHR");
 	if (!gr_vk_loader.DestroySwapchainKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroySwapchainKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDestroySwapchainKHR'\n");
 	
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -931,7 +928,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.GetSwapchainImagesKHR = (PFN_vkGetSwapchainImagesKHR)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkGetSwapchainImagesKHR");
 	if (!gr_vk_loader.GetSwapchainImagesKHR) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkGetSwapchainImagesKHR'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkGetSwapchainImagesKHR'\n");
 
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -942,7 +939,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.CreateImageView = (PFN_vkCreateImageView)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkCreateImageView");
 	if (!gr_vk_loader.CreateImageView) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkCreateImageView'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkCreateImageView'\n");
 
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);
@@ -953,7 +950,7 @@ t_err_codes px_rs_vk_init(PX_WContext* ctx) {
 
 	gr_vk_loader.DestroyImageView = (PFN_vkDestroyImageView)gr_vk_loader.GetDeviceProcAddr(gr_vk_base->device.device, "vkDestroyImageView");
 	if (!gr_vk_loader.DestroyImageView) {
-		fprintf(stderr, "[Vulkan] Failed to find symbol 'vkDestroyImageView'\n");
+		fprints(s_stderr, "[Vulkan] Failed to find symbol 'vkDestroyImageView'\n");
 
 		pxvk_destroy_device(&gr_vk_base->device);
 		pxvk_destroy_physical_device(&gr_vk_base->physical_device);

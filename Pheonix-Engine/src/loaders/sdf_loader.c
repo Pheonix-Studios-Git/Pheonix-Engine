@@ -1,8 +1,8 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+#include <pio.h>
 
+#include <pheonix-engine.h>
 #include <rendering-sys.h>
 #include <font.h>
 #include <rendering-sys/internal.h>
@@ -11,39 +11,39 @@
 #include <err-codes.h>
 
 t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
-    FILE* f = fopen(path, "rb");
+    PIO_Stream* f = sopen_file(path, PSTREAM_FLAG_READ | PSTREAM_FLAG_BINARY);
     if (!f) return ERR_COULD_NOT_OPEN_FILE;
 
     struct px_sdf_header h;
-    fread(&h, sizeof(h), 1, f);
+    sread(f, &h, sizeof(h));
 
     if (h.magic != PX_SDF_MAGIC) {
-        fclose(f);
+        sclose(f);
         return ERR_MAGIC_INVALID;
     }
 
     if (h.version > PX_SDF_CUR_VERSION) {
-        fclose(f);
+        sclose(f);
         return ERR_VERSION_INVALID;
     }
 
-    struct px_sdf_glyph* glyphs = (struct px_sdf_glyph*)malloc(sizeof(*glyphs) * h.glyph_count);
+    struct px_sdf_glyph* glyphs = (struct px_sdf_glyph*)alloc(sizeof(*glyphs) * h.glyph_count);
     if (!glyphs) {
-        fclose(f);
+        sclose(f);
         return ERR_ALLOC_FAILED;
     }
-    fread(glyphs, sizeof(*glyphs), h.glyph_count, f);
+    sread(f, glyphs, sizeof(*glyphs) * h.glyph_count);
 
     size_t atlas_size = h.atlas_width * h.atlas_height;
-    unsigned char* pixels = (unsigned char*)malloc(atlas_size);
+    unsigned char* pixels = (unsigned char*)alloc(atlas_size);
     if (!pixels) {
-        free(glyphs);
-        fclose(f);
+        dealloc(glyphs);
+        sclose(f);
         return ERR_ALLOC_FAILED;
     }
-    fread(pixels, 1, atlas_size, f);
+    sread(f, pixels, atlas_size);
 
-    fclose(f);
+    sclose(f);
 
 	PX_Texture tex = {
 		.type = PX_RS_TEXTURE_TYPE_2D,
@@ -56,8 +56,8 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 
 	t_err_codes err = px_rs_create_texture(&tex);
 	if (err != ERR_SUCCESS) {
-		free(pixels);
-		free(glyphs);
+		dealloc(pixels);
+		dealloc(glyphs);
 		return err;
 	}
 
@@ -73,8 +73,8 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 	err = px_rs_set_sampler(&tex, &sampler);
 	if (err != ERR_SUCCESS) {
 		px_rs_destroy_texture(&tex);
-		free(pixels);
-		free(glyphs);
+		dealloc(pixels);
+		dealloc(glyphs);
 		return err;
 	}
 
@@ -82,12 +82,12 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
 	if (err != ERR_SUCCESS) {
 		px_rs_destroy_texture(&tex);
 		px_rs_destroy_sampler(&sampler);
-		free(pixels);
-		free(glyphs);
+		dealloc(pixels);
+		dealloc(glyphs);
 		return err;
 	}
 
-    free(pixels);
+    dealloc(pixels);
 
     out->texture = tex;
 	out->sampler = sampler;
@@ -101,14 +101,14 @@ t_err_codes px_sdf_load(const char* path, struct px_sdf_font_data* out) {
     return ERR_SUCCESS;
 }
 
-void px_sdf_free(struct px_sdf_font_data* data) {
+void px_sdf_dealloc(struct px_sdf_font_data* data) {
     if (!data) return;
 
 	px_rs_destroy_texture(&data->texture);
 	px_rs_destroy_sampler(&data->sampler);
     
-    free(data->glyphs);
-    memset(data, 0, sizeof(*data));
+    dealloc(data->glyphs);
+    fillbuf(data, 0, sizeof(*data));
 }
 
 float px_sdf_range(const PX_Font* font) {

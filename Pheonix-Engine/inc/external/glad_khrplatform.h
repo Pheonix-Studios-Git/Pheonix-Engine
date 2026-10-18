@@ -90,6 +90,8 @@
  *                                  int arg2) KHRONOS_APIATTRIBUTES;
  */
 
+ #include <core/stdlib_pstdlib_connector.h>
+
 #if defined(__SCITECH_SNAP__) && !defined(KHRONOS_STATIC)
 #   define KHRONOS_STATIC 1
 #endif

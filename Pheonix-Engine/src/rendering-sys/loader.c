@@ -1,4 +1,5 @@
-#include <stdlib.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #include <rendering-sys.h>
 #include <font.h>
@@ -35,12 +36,12 @@ size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
 
     for (uint32_t mesh_idx = 0; mesh_idx < scene->mNumMeshes; mesh_idx++) {
         struct aiMesh* mesh = scene->mMeshes[mesh_idx];
-        struct batch_3d* b = (struct batch_3d*)malloc(sizeof(struct batch_3d));
+        struct batch_3d* b = (struct batch_3d*)alloc(sizeof(struct batch_3d));
         if (!b) continue;
 
         PX_3D_Object obj = {0};
 
-        if (mesh->mNumVertices <= 0) {free(b); continue;}
+        if (mesh->mNumVertices <= 0) {dealloc(b); continue;}
 
         uint64_t total_indices = 0;
         for (uint32_t i = 0; i < mesh->mNumFaces; i++) {
@@ -49,12 +50,12 @@ size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
                 total_indices++;
             }
         }
-        if (total_indices <= 0) {free(b); continue;}
+        if (total_indices <= 0) {dealloc(b); continue;}
 
-        struct vertex_3d* vertices = (struct vertex_3d*)malloc(sizeof(struct vertex_3d) * mesh->mNumVertices);
-        if (!vertices) {free(b); continue;}
-        uint32_t* indices = (uint32_t*)malloc(sizeof(uint32_t) * total_indices);
-        if (!indices) {free(vertices); free(b); continue;}
+        struct vertex_3d* vertices = (struct vertex_3d*)alloc(sizeof(struct vertex_3d) * mesh->mNumVertices);
+        if (!vertices) {dealloc(b); continue;}
+        uint32_t* indices = (uint32_t*)alloc(sizeof(uint32_t) * total_indices);
+        if (!indices) {dealloc(vertices); dealloc(b); continue;}
 
         for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
             struct vertex_3d v = {0};
@@ -104,7 +105,7 @@ size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
         obj.type = PX_RS_OBJECT_3D_TYPE_LOADED_MESH;
 
         if (mesh->mName.length > 0) {
-            obj.name = (char*)malloc(mesh->mName.length + 1);
+            obj.name = (char*)alloc(mesh->mName.length + 1);
             if (!obj.name) {
                 obj.name = "Unamed Mesh";
             } else {
@@ -116,12 +117,12 @@ size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
         }
 
         if (s->object_count + 1 > PX_RS_MAX_OBJECTS_PER_SCENE) {
-            fprintf(stderr, "Error: Too many objects in Scene! Skipping %s\n", obj.name);
-            free(vertices);
-            free(indices);
-            free(b);
+            fprints(s_stderr, "Error: Too many objects in Scene! Skipping %s\n", obj.name);
+            dealloc(vertices);
+            dealloc(indices);
+            dealloc(b);
         } else {
-            memcpy(&s->objects[s->object_count++], &obj, sizeof(PX_3D_Object));
+            copybuf(&s->objects[s->object_count++], &obj, sizeof(PX_3D_Object));
         }
     }
     aiReleaseImport(scene);
@@ -136,22 +137,22 @@ void px_rs_loader_destroy_load(PX_Scene_3D* s, PX_3D_Object* object) {
         struct batch_3d* b = (struct batch_3d*)object->ex_data;
 
         if (b->vertices) {
-            free(b->vertices);
+            dealloc(b->vertices);
             b->vertices = NULL;
         }
 
         if (b->indices) {
-            free(b->indices);
+            dealloc(b->indices);
             b->indices = NULL;
         }
 
-        free(b);
+        dealloc(b);
         object->ex_data = NULL;
     }
 
     if (object->name) {
         if (strcmp(object->name, "Unamed Mesh") != 0) {
-            free(object->name);
+            dealloc(object->name);
         }
 
         object->name = NULL;
@@ -171,5 +172,5 @@ void px_rs_loader_destroy_load(PX_Scene_3D* s, PX_3D_Object* object) {
         s->object_count--;
     }
 
-    memset(object, 0, sizeof(PX_3D_Object));
+    fillbuf(object, 0, sizeof(PX_3D_Object));
 }

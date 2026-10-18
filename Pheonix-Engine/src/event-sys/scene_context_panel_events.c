@@ -1,5 +1,4 @@
-#include <stdbool.h>
-#include <string.h>
+#include <pstdlib.h>
 
 #include <pheonix-engine.h>
 #include <window-sys.h>
@@ -28,7 +27,7 @@ static void append_to_scene_2d(PX_2D_Object* obj, PX_2D_Object** out_ptr) {
 static void handle_create_2d_panel(void) {
 	if (engine_2drenderer_main_scene.object_count >= PX_RS_MAX_OBJECTS_PER_SCENE) return;
 
-	PX_Panel* panel = (PX_Panel*)malloc(sizeof(PX_Panel));
+	PX_Panel* panel = (PX_Panel*)alloc(sizeof(PX_Panel));
 	if (!panel) return;
 	
 	*panel = (PX_Panel){
@@ -40,25 +39,25 @@ static void handle_create_2d_panel(void) {
 
 	// Connect Properties
 	PX_Property* p_name = px_util_property_add("Name", PX_RS_PROPERTY_STRING, NULL);
-	if (!p_name) {free(panel); return;}
+	if (!p_name) {dealloc(panel); return;}
 	p_name->data = NULL; p_name->size = sizeof(char*);
 
 	PX_Property* p_color = px_util_property_add("Color", PX_RS_PROPERTY_COLOR4, p_name);
-	if (!p_color) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
+	if (!p_color) {px_util_destroy_properties(p_name, NULL); dealloc(panel); return;}
 	p_color->data = &panel->color; p_color->size = sizeof(PX_Color4);
 
 	PX_Property* p_blur = px_util_property_add("Blur", PX_RS_PROPERTY_FLOAT, p_color);
-	if (!p_blur) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
+	if (!p_blur) {px_util_destroy_properties(p_name, NULL); dealloc(panel); return;}
 	p_blur->data = &panel->blur; p_blur->size = sizeof(float);
 	p_blur->min = 0.0f; p_blur->max = 1.0f; p_blur->step = 0.05f;
 
 	PX_Property* p_cradius = px_util_property_add("Corner Radius", PX_RS_PROPERTY_FLOAT, p_blur);
-	if (!p_cradius) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
+	if (!p_cradius) {px_util_destroy_properties(p_name, NULL); dealloc(panel); return;}
 	p_cradius->data = &panel->cradius; p_cradius->size = sizeof(float);
 	p_cradius->min = 0.0f; p_cradius->max = 100.0f; p_cradius->step = 0.1f;
 
 	PX_Property* p_noise = px_util_property_add("Noise", PX_RS_PROPERTY_FLOAT, p_cradius);
-	if (!p_noise) {px_util_destroy_properties(p_name, NULL); free(panel); return;}
+	if (!p_noise) {px_util_destroy_properties(p_name, NULL); dealloc(panel); return;}
 	p_noise->data = &panel->noise; p_noise->size = sizeof(float);
 	p_noise->min = 0.0f; p_noise->max = 1.0f; p_noise->step = 0.05f;
 

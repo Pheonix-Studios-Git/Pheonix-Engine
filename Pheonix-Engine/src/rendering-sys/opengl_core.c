@@ -1,8 +1,7 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <string.h>
-#include <stdio.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+#include <pio.h>
+
 #include <math.h>
 #include <cglm/cglm.h>
 
@@ -22,7 +21,7 @@
 
 #define GL_CHECK(label) { \
     GLenum e = glGetError(); \
-    if (e != GL_NO_ERROR) printf("[OpenGL] GL Error Caught during " label ": 0x%X\n", e); \
+    if (e != GL_NO_ERROR) fprint("[OpenGL] GL Error Caught during " label ": 0x%X\n", e); \
 }
 
 struct ui_renderer {
@@ -107,34 +106,45 @@ struct renderer_3d* gr_gl_3d = &gr_3d_b;
 
 static char* read_shader(const char* name) {
 	if (!name) return NULL;
+    if (!engine_exec_path) return NULL;
 
-    char path[512];
-    snprintf(path, sizeof(path), "shaders/%s", name);
+	size_t tmp_path_len = strlen(engine_exec_path) + strlen(name) + PX_OS_BASE_DIR_LEN + 10; // +10 because : PX_OS_PATH_SLASH + PX_OS_PATH_SLASH + main string + NULL
+	char* tmp_path = (char*)zalloc(tmp_path_len);
+	if (!tmp_path) return NULL;
 
-    FILE* f = fopen(path, "rb");
+	// snprintf(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "shaders" PX_OS_PATH_SLASH "%s", engine_exec_path, name);
+	memcpy(tmp_path, "shaders/", 8);
+	memcpy(tmp_path + 8, name, strlen(name));
+
+    PIO_Stream* f = sopen_file(tmp_path, PSTREAM_FLAG_READ);
     if (!f) {
-		fprintf(stderr, "Failed to read shader file [%s : Vertex]\n", path);
+		fprints(s_stderr, "Failed to read shader file [%s : Shader]\n", tmp_path);
 		perror("\tReason ");
+
+		dealloc(tmp_path);
 		return NULL;
 	}
 
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    rewind(f);
+    sseek(f, 0, SEEK_END);
+    long size = stell(f);
+    sseek(f, 0, SEEK_SET);
 
-    char* src = (char*)malloc(size + 1);
+    char* src = (char*)alloc(size + 1);
     if (!src) {
-        fclose(f);
+        sclose(f);
 
-		fprintf(stderr, "Failed to allocate memory for reading shader file [%s : Vertex]\n", path);
+		fprints(s_stderr, "Failed to allocate memory for reading shader file [%s : Shader]\n", tmp_path);
 		perror("\tReason ");
+
+		dealloc(tmp_path);
         return NULL;
     }
+	dealloc(tmp_path);
 
-    fread(src, 1, size, f);
+    sread(f, src, size);
     src[size] = '\0';
 
-    fclose(f);
+    sclose(f);
     return src;
 }
 
@@ -150,7 +160,7 @@ static unsigned int pxgl_compile_shader(unsigned int type, const char* source) {
     if (!ok) {
         char log[1024];
         glGetShaderInfoLog(shader, sizeof(log), NULL, log);
-        fprintf(stderr, "Shader compile failed error:\n%s\n", log);
+        fprints(s_stderr, "Shader compile failed error:\n%s\n", log);
         glDeleteShader(shader);
         return 0;
     }
@@ -164,16 +174,16 @@ static unsigned int pxgl_create_program(const char* vert, const char* frag) {
     char* frag_src = read_shader(frag);
 
     if (!vert_src || !frag_src) {
-        if (vert_src) free(vert_src);
-        if (frag_src) free(frag_src);
+        if (vert_src) dealloc(vert_src);
+        if (frag_src) dealloc(frag_src);
         return 0;
     }
 
     unsigned int vs = pxgl_compile_shader(GL_VERTEX_SHADER, vert_src);
     unsigned int fs = pxgl_compile_shader(GL_FRAGMENT_SHADER, frag_src);
 
-    free(vert_src);
-    free(frag_src);
+    dealloc(vert_src);
+    dealloc(frag_src);
 
     if (!vs || !fs) return 0;
 
@@ -191,7 +201,7 @@ static unsigned int pxgl_create_program(const char* vert, const char* frag) {
     if (!ok) {
         char log[1024];
         glGetProgramInfoLog(program, sizeof(log), NULL, log);
-        fprintf(stderr, "Program Link Errror:\n%s\n", log);
+        fprints(s_stderr, "Program Link Errror:\n%s\n", log);
         glDeleteProgram(program);
         return 0;
     }
@@ -452,7 +462,7 @@ static GLenum pxgl_get_texture_address_mode(PX_TextureAddressMode mode) {
 static void pxgl_2d_ortho(float left, float right, float bottom, float top, float* out_mat4) {
 	if (!out_mat4) return;
 
-    memset(out_mat4, 0, sizeof(float) * 16);
+    fillbuf(out_mat4, 0, sizeof(float) * 16);
 
     out_mat4[0] = 2.0f / (right - left);
     out_mat4[5] = -2.0f / (top - bottom);
@@ -481,7 +491,7 @@ t_err_codes px_rs_gl_init(PX_WContext* ctx) {
 
     int version = gladLoadGL();
     if (version == 0) {
-        fprintf(stderr, "[OpenGL] Failed to load OpenGL functions!\n");
+        fprints(s_stderr, "[OpenGL] Failed to load OpenGL functions!\n");
         return ERR_GL_INIT_FAILED;
     }
 	return ERR_SUCCESS;
@@ -490,7 +500,7 @@ t_err_codes px_rs_gl_init(PX_WContext* ctx) {
 t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
 	PX_Transform2 t = px_util_convert_anchor_to_transform(viewport);
 
-    memset(gr_gl_2d, 0, sizeof(*gr_gl_2d));
+    fillbuf(gr_gl_2d, 0, sizeof(*gr_gl_2d));
 
     gr_gl_2d->program = pxgl_create_program("2d_vertex.glsl", "2d_fragment.glsl");
     if (gr_gl_2d->program == 0)
@@ -579,7 +589,7 @@ t_err_codes px_rs_gl_init_2d(PX_AnchorRect viewport) {
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "Error: FBO creation failed: 0x%x\n", status);
+        fprints(s_stderr, "Error: FBO creation failed: 0x%x\n", status);
         px_rs_gl_shutdown();
         return ERR_INTERNAL;
     }
@@ -633,7 +643,7 @@ t_err_codes px_rs_gl_init_3d(PX_AnchorRect viewport) {
     gscene_cam_3d.move_speed = 0.1f;
     gscene_cam_3d.mouse_sens = 0.1f;
 
-    memset(gr_gl_3d, 0, sizeof(*gr_gl_3d));
+    fillbuf(gr_gl_3d, 0, sizeof(*gr_gl_3d));
 
     gr_gl_3d->program = pxgl_create_program("3d_vertex.glsl", "3d_fragment.glsl");
     if (gr_gl_3d->program == 0)
@@ -726,7 +736,7 @@ t_err_codes px_rs_gl_init_3d(PX_AnchorRect viewport) {
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "Error: FBO creation failed: 0x%x\n", status);
+        fprints(s_stderr, "Error: FBO creation failed: 0x%x\n", status);
         px_rs_gl_shutdown();
         return ERR_INTERNAL;
     }
@@ -767,7 +777,7 @@ void px_rs_gl_shutdown_2d(void) {
     if (gr_gl_2d->program) glDeleteProgram(gr_gl_2d->program);
     if (gr_gl_2d->text_program) glDeleteProgram(gr_gl_2d->text_program);
 
-    memset(gr_gl_2d, 0, sizeof(*gr_gl_2d));
+    fillbuf(gr_gl_2d, 0, sizeof(*gr_gl_2d));
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE0, 0);
@@ -788,7 +798,7 @@ void px_rs_gl_shutdown_3d(void) {
     if (gr_gl_3d->flatColorTex) glDeleteTextures(1, &gr_gl_3d->flatColorTex);
     if (gr_gl_3d->flatDepthRBO) glDeleteRenderbuffers(1, &gr_gl_3d->flatDepthRBO);
     
-    memset(gr_gl_3d, 0, sizeof(*gr_gl_3d));
+    fillbuf(gr_gl_3d, 0, sizeof(*gr_gl_3d));
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE0, 0);
@@ -1272,7 +1282,7 @@ void px_rs_gl_handle_mouse_move(PX_Vector2 mpos, bool _2d) {
 
     if (subId <= 0) return; // Nothing there
 
-	printf("Hover deteced on FlatFBO!\n");
+	fprint("Hover deteced on FlatFBO!\n");
 }
 
 t_err_codes px_rs_gl_create_texture(PX_Texture* texture) {

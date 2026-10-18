@@ -1,7 +1,5 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #include <rendering-sys.h>
 #include <font.h>
@@ -16,10 +14,10 @@ char* px_util_strdup(const char* s) {
 
 	size_t len = strlen(s);
 
-    char* out = (char*)malloc(len + 1);
+    char* out = (char*)alloc(len + 1);
     if (!out) return NULL;
 
-    memcpy(out, s, len);
+    copybuf(out, s, len);
 	out[len] = '\0';
     return out;
 }
@@ -55,7 +53,7 @@ PX_AnchorRect px_util_convert_transform_to_anchor(PX_Transform2 t, PX_Window* wi
 
 // Auto sets callback data as identifier
 PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode* parent, size_t iden, PX_Font* font, float font_size, void (*on_select)(PX_DropdownNode* node, void* identifier)) {
-    PX_DropdownNode* node = malloc(sizeof(*node));
+    PX_DropdownNode* node = zalloc(sizeof(*node));
     if (!node) return NULL;
 
     *node = (PX_DropdownNode){
@@ -76,15 +74,15 @@ PX_DropdownNode* px_util_dropdown_node_create(const char* label, PX_DropdownNode
 	node->callback_data = (void*)&node->identifier;
 
     if (!node->label && label) {
-        free(node);
+        dealloc(node);
         return NULL;
     }
 
 	if (!parent) return node;
 
-	PX_DropdownNode** children = realloc(parent->children, sizeof(PX_DropdownNode*)*(parent->children_count + 1));
+	PX_DropdownNode** children = rzalloc(parent->children, sizeof(PX_DropdownNode*)*(parent->children_count + 1));
     if (!children) {
-		free(node);
+		dealloc(node);
 		return NULL;
 	}
 
@@ -104,10 +102,10 @@ void px_util_dropdown_node_destroy(PX_DropdownNode* node) {
     if (!node) return;
 
     for (size_t i = 0; i < node->children_count; i++) px_util_dropdown_node_destroy(node->children[i]);
-	if (node->children) free(node->children);
-    if (node->label) free((void*)node->label);
+	if (node->children) dealloc(node->children);
+    if (node->label) dealloc((void*)node->label);
 
-	free(node);
+	dealloc(node);
 }
 
 void px_util_dropdown_destroy(PX_Dropdown* dd) {
@@ -119,7 +117,7 @@ void px_util_dropdown_destroy(PX_Dropdown* dd) {
 PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Property* parent) {
 	if (!label) return NULL; // Properties must have labels
 
-	PX_Property* pnode = (PX_Property*)malloc(sizeof(PX_Property));
+	PX_Property* pnode = (PX_Property*)alloc(sizeof(PX_Property));
 	if (!pnode) return NULL;
 	*pnode = (PX_Property){0};
 
@@ -137,14 +135,14 @@ PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Pr
 void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 	PX_Property* cur = start;
 	while (cur) {
-		if (cur->label) free((void*)cur->label);
+		if (cur->label) dealloc((void*)cur->label);
 
 		if (cur->data_not_owned) goto next;
 		switch (cur->type) {
 			case PX_RS_PROPERTY_STRING: {
 				if (cur->size != sizeof(char**) || !cur->data) break;
 				
-				free(*(char**)cur->data);
+				dealloc(*(char**)cur->data);
 				*(char**)cur->data = NULL;
 			}
 
@@ -155,7 +153,7 @@ void px_util_destroy_properties(PX_Property* start, PX_Property** field) {
 			PX_Property* to_free = cur;
 			cur = cur->next;
 
-			free(to_free);
+			dealloc(to_free);
 		}
 	}
 
@@ -235,4 +233,46 @@ char px_util_ekeycode_to_char(PX_EKeycodes key, bool caps, bool shift) {
 
 		default: return '\0';
 	}
+}
+
+char* px_util_get_exec_path(void) {
+	char* buf = (char*)zalloc(0x1000); // 4096 bytes
+	if (!buf) return NULL;
+
+	llong_t len = 0;
+
+	#ifdef __linux__
+		#if defined(__x86_64__) || defined(__amd64__)
+			#define SYSCALL_READLINK 0x59
+		#elif defined(__i386) || defined(__i386__)
+			#define SYSCALL_READLINK 0x55
+		#elif defined(__arm__) || defined(__ARM_ARCH)
+			#define SYSCALL_READLINK 0x55
+		#elif defined(__aarch64__)
+			#define SYSCALL_READLINK_AT 0x4E
+		#elif defined(__riscv)
+			#define SYSCALL_READLINK 0x59
+		#endif
+
+		#ifdef SYSCALL_READLINK
+			// readlink("/proc/self/exe", buf, 0x1000)
+			len = __plib_syscall(SYSCALL_READLINK, (llong_t)(uintptr_t)"/proc/self/exe", (llong_t)(uintptr_t)buf, 0x1000);
+			#undef SYSCALL_READLINK
+		#else
+			// readlink_at(AT_FDCWD, "/proc/self/exe", buf, 0x1000)
+			len = __plib_syscall(SYSCALL_READLINK_AT, -100LL, (llong_t)(uintptr_t)"/proc/self/exe", (llong_t)(uintptr_t)buf, 0x1000);
+			#undef SYSCALL_READLINK_AT
+		#endif
+	#elif _WIN32
+		#include <windows.h>
+		len = GetModuleFileNameW(NULL, (LPWSTR)buf, (DWORD)(0x1000 / sizeof(WCHAR)))
+	#endif
+
+	if (len <= 0 || len >= 0x1000) {
+		dealloc(buf);
+		return NULL;
+	}
+	buf[len] = '\0';
+
+	return buf;
 }

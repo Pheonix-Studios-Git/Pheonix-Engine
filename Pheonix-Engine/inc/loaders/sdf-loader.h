@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include <pstdlib.h>
 
 #include <rendering-sys.h>
 #include <font.h>

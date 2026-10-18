@@ -1,8 +1,4 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-#include <unistd.h>
+#include <pstdlib.h>
 #include <time.h>
 
 #include <pheonix-engine.h>
@@ -57,6 +53,7 @@ typedef struct engine_ui_panel {
 } t_engine_ui_panel;
 
 // Main
+char* engine_exec_path = NULL;
 static bool engine_running = false;
 
 // Window Info
@@ -219,13 +216,13 @@ static t_engine_ui_panel* engine_flag_panel_resize_panel = NULL;
 static PX_Vector2 engine_flag_panel_resize_og_mouse_pos = (PX_Vector2){0};
 
 static void print_help(void) {
-    printf("Usage: pheonix-engine [--COMMANDS]\n");
-    printf("Commands:\n");
-    printf("\tbuild-psdf <.json file containing SDF info> <output PSDF path>: Builds PSDF files from SDF files\n");
-	printf("\tbase-scene-type <3d|2d>: Specifies the starting scene type. Value can be only '3d' or '2d'\n");
-	printf("\tgpu-backend <vulkan|opengl>: Specifies the GPU Backend API to use. Value can be only 'vulkan' or 'opengl'\n");
-	printf("\tno-vsync: Turns off Vertical Synchronization\n");
-    printf("\thelp: Prints this help message\n");
+    fprint("Usage: pheonix-engine [--COMMANDS]\n");
+    fprint("Commands:\n");
+    fprint("\tbuild-psdf <.json file containing SDF info> <output PSDF path>: Builds PSDF files from SDF files\n");
+	fprint("\tbase-scene-type <3d|2d>: Specifies the starting scene type. Value can be only '3d' or '2d'\n");
+	fprint("\tgpu-backend <vulkan|opengl>: Specifies the GPU Backend API to use. Value can be only 'vulkan' or 'opengl'\n");
+	fprint("\tno-vsync: Turns off Vertical Synchronization\n");
+    fprint("\thelp: Prints this help message\n");
 }
 
 static void parse_args(t_args* args, int argc, char** argv) {
@@ -245,7 +242,7 @@ static void parse_args(t_args* args, int argc, char** argv) {
             args->help = true;
         } else if (strcmp(opt, "--build-psdf") == 0) {
             if (i + 2 >= argc) {
-                fprintf(stderr, "Usage: pheonix-engine --build-psdf <json> <output>\n\tUse --help for more info!\n");
+                fprints(s_stderr, "Usage: pheonix-engine --build-psdf <json> <output>\n\tUse --help for more info!\n");
                 args->valid = false;
                 break;
             }
@@ -255,7 +252,7 @@ static void parse_args(t_args* args, int argc, char** argv) {
             args->build_psdf_out = argv[++i];
         } else if (strcmp(opt, "--base-scene-type") == 0) {
 			if (i + 1 >= argc) {
-                fprintf(stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tUse --help for more info!\n");
+                fprints(s_stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tUse --help for more info!\n");
                 args->valid = false;
                 break;
             }
@@ -266,13 +263,13 @@ static void parse_args(t_args* args, int argc, char** argv) {
 			} else if (strcmp(type, "2d") == 0) {
 				args->base_scene_type = PX_EDITOR_MODE_2D;
 			} else {
-				fprintf(stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tBase Scene Type can only be '3d' or '2d'\n\tUse --help for more info!\n");
+				fprints(s_stderr, "Usage: pheonix-engine --base-scene-type <3d|2d>\n\tBase Scene Type can only be '3d' or '2d'\n\tUse --help for more info!\n");
                 args->valid = false;
                 break;
 			}
 		} else if (strcmp(opt, "--gpu-backend") == 0) {
 			if (i + 1 >= argc) {
-                fprintf(stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tUse --help for more info!\n");
+                fprints(s_stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tUse --help for more info!\n");
                 args->valid = false;
                 break;
             }
@@ -283,14 +280,14 @@ static void parse_args(t_args* args, int argc, char** argv) {
 			} else if (strcmp(type, "opengl") == 0) {
 				args->gpu_backend = PX_RS_GPU_BACKEND_OPENGL;
 			} else {
-				fprintf(stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tGPU Backend API can only be 'vulkan' or 'opengl'\n\tUse --help for more info!\n");
+				fprints(s_stderr, "Usage: pheonix-engine --gpu-backend <vulkan|opengl>\n\tGPU Backend API can only be 'vulkan' or 'opengl'\n\tUse --help for more info!\n");
                 args->valid = false;
                 break;
 			}
 		} else if (strcmp(opt, "--no-vsync") == 0) {
 			args->vsync = false;
 		} else {
-            fprintf(stderr, "Usage: pheonix-engine [--COMMANDS]\n\tUse --help for more info!\n");
+            fprints(s_stderr, "Usage: pheonix-engine [--COMMANDS]\n\tUse --help for more info!\n");
             args->valid = false;
             break;
         }
@@ -323,7 +320,7 @@ void enginef_deinit_2drenderer_main_scene(void) {
 
 		switch (obj->ex_data_type) {
 			case PX_RS_OBJECT_2D_TYPE_PANEL: {
-				free(obj->ex_data);
+				dealloc(obj->ex_data);
 				break;
 			}
 			default: break;
@@ -347,6 +344,8 @@ static void enginef_cleanup(void) {
     px_rs_shutdown();
     px_ws_destroy(&engine_window_main);
     px_ws_shutdown();
+
+	if (engine_exec_path) { dealloc(engine_exec_path); engine_exec_path = NULL; }
 }
 
 static bool enginef_init_dropdowns(void) {
@@ -726,6 +725,8 @@ static double enginef_core_get_time(void) {
 }
 
 int main(int argc, char** argv) {
+	__plib_init_standard_streams();
+	
     // Important Variables
     t_err_codes last_err = ERR_SUCCESS;
 
@@ -753,16 +754,23 @@ int main(int argc, char** argv) {
         return ERR_SUCCESS;
     }
 
-    // Initialize SubSystems
+	// Set Exec Path
+	engine_exec_path = px_util_get_exec_path();
+	if (!engine_exec_path) {
+		fprints(s_stderr, "Error: Failed to get executable path!\n");
+		return ERR_FAILURE;
+	}
+
+	// Initialize SubSystems
     last_err = px_ws_init();
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize window system! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to initialize window system! (%u)\n", last_err);
         return last_err;
     } 
 
     last_err = px_ws_show_splash();
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to display splash screen! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to display splash screen! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -770,7 +778,7 @@ int main(int argc, char** argv) {
 
     last_err = px_ws_create(&engine_window_main, passed_args.gpu_backend);
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to create window! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to create window! (%u)\n", last_err);
         px_ws_shutdown();
         return last_err;
     }
@@ -781,7 +789,7 @@ int main(int argc, char** argv) {
 
 	last_err = px_ws_get_ctx(&engine_window_main, &engine_window_context_main);
 	if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to retrieve Window-GPU Context! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to retrieve Window-GPU Context! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -789,7 +797,7 @@ int main(int argc, char** argv) {
 
 	last_err = px_rs_change_backend(passed_args.gpu_backend);
 	if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to change GPU API Backend! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to change GPU API Backend! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -797,7 +805,7 @@ int main(int argc, char** argv) {
 
     last_err = px_rs_init(&engine_window_context_main);
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize rendering system! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to initialize rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -805,7 +813,7 @@ int main(int argc, char** argv) {
 
     last_err = px_rs_init_2d(engine_anchor_all);
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize UI rendering system! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to initialize UI rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -813,7 +821,7 @@ int main(int argc, char** argv) {
 
     last_err = px_rs_init_3d(engine_anchor_scene_editor);
     if (last_err != ERR_SUCCESS) {
-        fprintf(stderr, "Error: Failed to initialize 3D rendering system! (%u)\n", last_err);
+        fprints(s_stderr, "Error: Failed to initialize 3D rendering system! (%u)\n", last_err);
         px_ws_destroy(&engine_window_main);
         px_ws_shutdown();
         return last_err;
@@ -822,9 +830,24 @@ int main(int argc, char** argv) {
     event_sys_init((PX_Scale2){engine_window_main_w, engine_window_main_h}, (PX_Vector2){0});
 
     // Load Fonts
+	// size_t tmp_path_len = strlen(engine_exec_path) + PX_OS_BASE_DIR_LEN + 32; // +32 because : PX_OS_PATH_SLASH + PX_OS_PATH_SLASH + main path + NULL
+	// char* tmp_path = (char*)zalloc(tmp_path_len);
+	// if (!tmp_path) {
+	// 	perror("Error: Failed to allocate memory!\n");
+    //     px_ws_destroy(&engine_window_main);
+    //     px_ws_shutdown();
+    //     return ERR_ALLOC_FAILED;
+	// }
+
+	// snprintf(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "assets/fonts/psdf/roboto.psdf", engine_exec_path);
+
     engine_font_ui = px_font_load("assets/fonts/psdf/roboto.psdf");
+	// dealloc(tmp_path);
+	// tmp_path = NULL;
+	// tmp_path_len = 0;
+	
     if (!engine_font_ui) {
-        fprintf(stderr, "Error: Failed to load UI font\n");
+        fprints(s_stderr, "Error: Failed to load UI font\n");
 		
 		event_sys_deinit();
         
@@ -840,7 +863,7 @@ int main(int argc, char** argv) {
 
     // Dropdowns
 	if (!enginef_init_dropdowns()) {
-		fprintf(stderr, "Error: Failed to initialize UI Elements!\n");
+		fprints(s_stderr, "Error: Failed to initialize UI Elements!\n");
 		
         px_font_destroy(engine_font_ui);
 		
@@ -873,7 +896,7 @@ int main(int argc, char** argv) {
 
     // Render
     engine_running = true;
-    printf("\n");
+    fprint("\n");
     while (engine_running) {
         double current_time = enginef_core_get_time();
         double delta_time = current_time - last_time;
@@ -885,7 +908,7 @@ int main(int argc, char** argv) {
         if (fps_timer >= 0.1) {
             double fps = frames / fps_timer;
 
-            printf("\rFPS: %.2f", fps);
+            fprint("\rFPS: %.2f", fps);
             fflush(stdout);
 
             frames = 0;
@@ -931,7 +954,7 @@ int main(int argc, char** argv) {
 
         last_err = px_ws_poll(&engine_window_main);
         if (last_err != ERR_SUCCESS) {
-            fprintf(stderr, "Error: Failed to poll events! (%u)\n", last_err);
+            fprints(s_stderr, "Error: Failed to poll events! (%u)\n", last_err);
             enginef_cleanup();
             return last_err;
         }
@@ -1085,7 +1108,7 @@ int main(int argc, char** argv) {
         px_rs_frame_end();
         px_ws_swap_buffers(&engine_window_main);
     }
-    printf("\n");
+    fprint("\n");
 
     if (engine_mouse_locked) {
         px_ws_set_mouse_locked(&engine_window_main, false);

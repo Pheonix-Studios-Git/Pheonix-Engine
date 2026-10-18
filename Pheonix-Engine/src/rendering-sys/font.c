@@ -1,7 +1,5 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <stdint.h>
+#include <pstdlib.h>
+#include <pio.h>
 
 #include <rendering-sys.h>
 #include <font.h>
@@ -12,12 +10,12 @@
 #include <external/stb_image.h>
 
 PX_Font* px_font_load(const char* path) {
-    PX_Font* font = calloc(1, sizeof(PX_Font));
+    PX_Font* font = zalloc(sizeof(PX_Font));
     if (!font) return NULL;
 
     struct px_sdf_font_data sdf;
     if (px_sdf_load(path, &sdf) != ERR_SUCCESS) {
-        free(font);
+        dealloc(font);
         return NULL;
     }
 
@@ -41,31 +39,30 @@ void px_font_destroy(PX_Font* font) {
         px_rs_destroy_texture(&font->impl.sdf.texture);
 		px_rs_destroy_sampler(&font->impl.sdf.sampler);
 
-        free(font->impl.sdf.glyphs);
+        dealloc(font->impl.sdf.glyphs);
     }
 
-    free(font);
+    dealloc(font);
 }
 
 static char* read_file(const char* path) {
-    FILE* f = fopen(path, "r");
-    if (!f)
-        return NULL;
+    PIO_Stream* f = sopen_file(path, PSTREAM_FLAG_READ);
+    if (!f) return NULL;
 
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    rewind(f);
+    sseek(f, 0, SEEK_END);
+    long size = stell(f);
+    sseek(f, 0, SEEK_SET);
 
-    char* src = (char*)malloc(size + 1);
+    char* src = (char*)alloc(size + 1);
     if (!src) {
-        fclose(f);
+        sclose(f);
         return NULL;
     }
 
-    fread(src, 1, size, f);
+    sread(f, src, size);
     src[size] = '\0';
 
-    fclose(f);
+    sclose(f);
     return src;
 }
 
@@ -74,24 +71,24 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
     if (!json_text) return ERR_COULD_NOT_OPEN_FILE;
 
     cJSON* root = cJSON_Parse(json_text);
-    free(json_text);
+    dealloc(json_text);
     if (!root) return ERR_INTERNAL;
 
     cJSON* atlas = cJSON_GetObjectItem(root, "atlas");
     if (!atlas) {
-        fprintf(stderr, "SDF is missing atlas!\n");
+        fprints(s_stderr, "SDF is missing atlas!\n");
         cJSON_Delete(root);
         return ERR_INTERNAL;
     }
     cJSON* metrics = cJSON_GetObjectItem(root, "metrics");
     if (!metrics) {
-        fprintf(stderr, "SDF is missing metrics!\n");
+        fprints(s_stderr, "SDF is missing metrics!\n");
         cJSON_Delete(root);
         return ERR_INTERNAL;
     }
     cJSON* glyphs_json = cJSON_GetObjectItem(root, "glyphs");
     if (!glyphs_json) {
-        fprintf(stderr, "SDF is missing glyphs!\n");
+        fprints(s_stderr, "SDF is missing glyphs!\n");
         cJSON_Delete(root);
         return ERR_INTERNAL;
     }
@@ -103,8 +100,8 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
     int glyph_count = cJSON_GetArraySize(glyphs_json);
 
     char png_path[512];
-    strcpy(png_path, input_json);
-    strcpy(strrchr(png_path, '.'), ".png");
+    strcopy(png_path, input_json);
+    strcopy((char*)strfindc((const char*)png_path, '.', 0), ".png");
 
     int img_w, img_h, img_c;
     stbi_set_flip_vertically_on_load(1);
@@ -114,7 +111,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         return ERR_INTERNAL;
     }
 
-    struct px_sdf_glyph* glyphs = (struct px_sdf_glyph*)calloc(glyph_count, sizeof(*glyphs));
+    struct px_sdf_glyph* glyphs = (struct px_sdf_glyph*)zalloc(glyph_count * sizeof(*glyphs));
     if (!glyphs) {
         cJSON_Delete(root);
         stbi_image_free(pixels);
@@ -124,20 +121,20 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
     for (int i = 0; i < glyph_count; i++) {
         cJSON* g = cJSON_GetArrayItem(glyphs_json, i);
         if (!g) {
-            fprintf(stderr, "Glyph [%d] itself is missing!\n", i);
+            fprints(s_stderr, "Glyph [%d] itself is missing!\n", i);
             cJSON_Delete(root);
             stbi_image_free(pixels);
             return ERR_INTERNAL;
         }
 
         struct px_sdf_glyph* out = &glyphs[i];
-		memset(out, 0, sizeof(struct px_sdf_glyph));
+		fillbuf(out, 0, sizeof(struct px_sdf_glyph));
 
 		cJSON* unicode = cJSON_GetObjectItem(g, "unicode");
         if (!unicode) {
             cJSON* index = cJSON_GetObjectItem(g, "index");
             if (!index) {
-                fprintf(stderr, "Glyph [%d] missing both unicode and index!\n", i);
+                fprints(s_stderr, "Glyph [%d] missing both unicode and index!\n", i);
                 cJSON_Delete(root);
                 stbi_image_free(pixels);
                 return ERR_INTERNAL;
@@ -148,7 +145,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         }
         cJSON* advance = cJSON_GetObjectItem(g, "advance");
         if (!advance) {
-            fprintf(stderr, "Glyph [%d] missing advance!\n", i);
+            fprints(s_stderr, "Glyph [%d] missing advance!\n", i);
             cJSON_Delete(root);
             stbi_image_free(pixels);
             return ERR_INTERNAL;
@@ -165,7 +162,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         cJSON* bottomj = cJSON_GetObjectItem(plane, "bottom");
 
         if (!leftj || !rightj || !topj || !bottomj) {
-            fprintf(stderr, "Glyph [%d] missing left/right/top/bottom!\n", i);
+            fprints(s_stderr, "Glyph [%d] missing left/right/top/bottom!\n", i);
             cJSON_Delete(root);
             stbi_image_free(pixels);
             return ERR_INTERNAL;
@@ -187,7 +184,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         bottomj = cJSON_GetObjectItem(atlasb, "bottom");
 
         if (!leftj || !rightj || !topj || !bottomj) {
-            fprintf(stderr, "Glyph [%d]->atlasBounds missing left/right/top/bottom!\n", i);
+            fprints(s_stderr, "Glyph [%d]->atlasBounds missing left/right/top/bottom!\n", i);
             cJSON_Delete(root);
             stbi_image_free(pixels);
             return ERR_INTERNAL;
@@ -204,7 +201,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         out->v1 = at / atlas_h;
     }
 
-    FILE* f = fopen(output_psdf, "wb");
+    PIO_Stream* f = sopen_file(output_psdf, PSTREAM_FLAG_WRITE | PSTREAM_FLAG_BINARY);
     if (!f) return ERR_COULD_NOT_OPEN_FILE;
 
     cJSON* ascender = cJSON_GetObjectItem(metrics, "ascender");
@@ -212,7 +209,7 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
     cJSON* lineHeight = cJSON_GetObjectItem(metrics, "lineHeight");
 
     if (!ascender || !descender || !lineHeight) {
-        fprintf(stderr, "Metrics is missing Ascender/Descender/Line height\n");
+        fprints(s_stderr, "Metrics is missing Ascender/Descender/Line height\n");
         cJSON_Delete(root);
         stbi_image_free(pixels);
         return ERR_INTERNAL;
@@ -230,12 +227,12 @@ t_err_codes px_sdf_build_font(const char* input_json, const char* output_psdf, c
         .sdf_range = sdf_range
     };
 
-    fwrite(&h, sizeof(h), 1, f);
-    fwrite(glyphs, sizeof(*glyphs), glyph_count, f);
-    fwrite(pixels, atlas_w * atlas_h, 1, f);
-    fclose(f);
+    swrite(f, &h, sizeof(h));
+    swrite(f, glyphs, sizeof(*glyphs) * glyph_count);
+    swrite(f, pixels, atlas_w * atlas_h);
+    sclose(f);
 
-    free(glyphs);
+    dealloc(glyphs);
     stbi_image_free(pixels);
     cJSON_Delete(root);
 

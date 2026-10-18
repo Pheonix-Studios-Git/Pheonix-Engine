@@ -23,6 +23,8 @@
 #ifndef cJSON__h
 #define cJSON__h
 
+#include <core/stdlib_pstdlib_connector.h>
+
 #ifdef __cplusplus
 extern "C"
 {

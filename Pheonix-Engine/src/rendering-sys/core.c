@@ -1,5 +1,6 @@
-#include <stdlib.h>
-#include <string.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+
 #include <cglm/cglm.h>
 
 #include <decoders/unicode.h>
@@ -232,8 +233,8 @@ static bool clip_line_to_container(PX_Vector2* start, PX_Vector2* end, PX_Transf
 static void push_3d_grid(PX_EditorGrid_3D* grid, PX_Transform3 transform, struct batch_3d* b) {
 	if (!b) return;
 
-    memset(b, 0, sizeof(struct batch_3d));
-    memcpy(&b->transform, &transform, sizeof(PX_Transform3));
+    fillbuf(b, 0, sizeof(struct batch_3d));
+    copybuf(&b->transform, &transform, sizeof(PX_Transform3));
     
     b->color = grid->color;
     b->line_width = 1.0f;
@@ -307,12 +308,12 @@ static void push_3d_grid(PX_EditorGrid_3D* grid, PX_Transform3 transform, struct
 
 static void push_3d_line(PX_Color4 color, PX_Transform3 transform, PX_Vector3 endpos, float width, struct batch_3d* b) {
 	if (!b) return;
-    memset(b, 0, sizeof(struct batch_3d));
+    fillbuf(b, 0, sizeof(struct batch_3d));
    
     if (gr_batch_3d->vertex_count + 2 >= gr_batch_3d->vertex_capacity) return;
     if (gr_batch_3d->index_count + 2 >= gr_batch_3d->index_capacity) return;
    
-    memcpy(&b->transform, &transform, sizeof(PX_Transform3));
+    copybuf(&b->transform, &transform, sizeof(PX_Transform3));
     
     b->color = color;
 
@@ -350,7 +351,7 @@ static void push_2d_quad(PX_Transform2 container, PX_Transform2 t, PX_Color4 c, 
     if (!b) return;
     if (gr_batch_2d->vertex_count + 4 > gr_batch_2d->vertex_capacity) return;
 
-    memset(b, 0, sizeof(struct batch_2d));
+    fillbuf(b, 0, sizeof(struct batch_2d));
 
     b->type = BATCH_2D_PANEL;
 	b->visible = true;
@@ -432,7 +433,7 @@ static void push_2d_line(PX_Color4 color, PX_Vector2 startpos, PX_Vector2 endpos
 	if (!b || width < 1.0f) return;
 	if (gr_batch_2d->vertex_count + 2 >= gr_batch_2d->vertex_capacity) return;
 	
-    memset(b, 0, sizeof(struct batch_2d));
+    fillbuf(b, 0, sizeof(struct batch_2d));
 	b->type = BATCH_2D_LINE;
 	b->visible = true;
 	b->line_width = width;
@@ -468,7 +469,7 @@ static void push_2d_line(PX_Color4 color, PX_Vector2 startpos, PX_Vector2 endpos
 
 static void push_2d_grid(PX_EditorGrid_2D* grid, PX_Transform2 container, struct batch_2d* b) {
     if (!grid || !b) return;
-    memset(b, 0, sizeof(struct batch_2d));
+    fillbuf(b, 0, sizeof(struct batch_2d));
 
     b->type = BATCH_2D_LINE;
 	b->visible = true;
@@ -588,7 +589,7 @@ static void push_2d_batch(struct batch_2d* b) {
     }
 
     if (gr_batch_2d->batch_count < MAX_BATCHES) {
-        memcpy(&gr_batch_2d->batches[gr_batch_2d->batch_count++], b, sizeof(struct batch_2d));
+        copybuf(&gr_batch_2d->batches[gr_batch_2d->batch_count++], b, sizeof(struct batch_2d));
     }
 }
 
@@ -598,7 +599,7 @@ static void push_3d_batch(struct batch_3d* b) {
 
     if (gr_batch_3d->batch_count >= MAX_BATCHES) return;
 
-    memcpy(&gr_batch_3d->batches[gr_batch_3d->batch_count], b, sizeof(struct batch_3d));
+    copybuf(&gr_batch_3d->batches[gr_batch_3d->batch_count], b, sizeof(struct batch_3d));
     gr_batch_3d->batch_count++;
 }
 
@@ -642,15 +643,15 @@ t_err_codes px_rs_init_3d(PX_AnchorRect viewport) {
 	viewport_3d = viewport;
 
 	gr_batch_3d->vertex_capacity = MAX_VERTEX_COUNT;
-    gr_batch_3d->vertices = (struct vertex_3d*)malloc(sizeof(struct vertex_3d) * gr_batch_3d->vertex_capacity);
+    gr_batch_3d->vertices = (struct vertex_3d*)alloc(sizeof(struct vertex_3d) * gr_batch_3d->vertex_capacity);
     if (!gr_batch_3d->vertices) {
         return ERR_ALLOC_FAILED;
     }
 
     gr_batch_3d->index_capacity = MAX_3D_INDICES;
-    gr_batch_3d->indices = (uint32_t*)malloc(sizeof(uint32_t) * gr_batch_3d->index_capacity);
+    gr_batch_3d->indices = (uint32_t*)alloc(sizeof(uint32_t) * gr_batch_3d->index_capacity);
     if (!gr_batch_3d->indices) {
-        free(gr_batch_3d->vertices);
+        dealloc(gr_batch_3d->vertices);
         return ERR_ALLOC_FAILED;
     }
 
@@ -664,11 +665,11 @@ t_err_codes px_rs_init_3d(PX_AnchorRect viewport) {
 	if (code == ERR_SUCCESS) backend_initialized = true;
 	else {
 		gr_batch_3d->vertex_capacity = 0;
-		free(gr_batch_3d->vertices);
+		dealloc(gr_batch_3d->vertices);
 		gr_batch_3d->vertices = NULL;
 
 		gr_batch_3d->index_capacity = 0;
-		free(gr_batch_3d->indices);
+		dealloc(gr_batch_3d->indices);
 		gr_batch_3d->indices = NULL;
 	}
 	return code;
@@ -678,7 +679,7 @@ t_err_codes px_rs_init_2d(PX_AnchorRect viewport) {
 	viewport_2d = viewport;
 
 	gr_batch_2d->vertex_capacity = MAX_VERTEX_COUNT;
-    gr_batch_2d->vertices = (struct vertex_2d*)malloc(sizeof(struct vertex_2d) * gr_batch_2d->vertex_capacity);
+    gr_batch_2d->vertices = (struct vertex_2d*)alloc(sizeof(struct vertex_2d) * gr_batch_2d->vertex_capacity);
     if (!gr_batch_2d->vertices) {
         return ERR_ALLOC_FAILED;
     }
@@ -693,7 +694,7 @@ t_err_codes px_rs_init_2d(PX_AnchorRect viewport) {
 	if (code == ERR_SUCCESS) backend_initialized = true;
 	else {
 		gr_batch_2d->vertex_capacity = 0;
-		free(gr_batch_2d->vertices);
+		dealloc(gr_batch_2d->vertices);
 		gr_batch_2d->vertices = NULL;
 	}
 	return code;
@@ -722,8 +723,8 @@ void px_rs_shutdown(void) {
 		default: return;
 	}
 
-	if (gr_batch_3d->vertices) free(gr_batch_3d->vertices);
-    if (gr_batch_3d->indices) free(gr_batch_3d->indices);
+	if (gr_batch_3d->vertices) dealloc(gr_batch_3d->vertices);
+    if (gr_batch_3d->indices) dealloc(gr_batch_3d->indices);
 
 	backend_initialized = false;
 }
@@ -1335,14 +1336,14 @@ t_err_codes px_rs_draw_scene_3d(PX_Scene_3D* scene) {
                 if (gr_batch_3d->vertex_count + b->vertex_count > gr_batch_3d->vertex_capacity) continue; // Skip, too large
                 if (gr_batch_3d->index_count + b->index_count > gr_batch_3d->index_capacity) continue; // Skip, too large
 
-                memcpy(&batch, b, sizeof(struct batch_3d));
+                copybuf(&batch, b, sizeof(struct batch_3d));
 
                 batch.vertices = NULL;
                 batch.indices = NULL;
                 batch.transform = finalT;
 
                 batch.vertex_offset = gr_batch_3d->vertex_count;
-                memcpy(&gr_batch_3d->vertices[gr_batch_3d->vertex_count], b->vertices, sizeof(struct vertex_3d) * b->vertex_count);
+                copybuf(&gr_batch_3d->vertices[gr_batch_3d->vertex_count], b->vertices, sizeof(struct vertex_3d) * b->vertex_count);
                 gr_batch_3d->vertex_count += b->vertex_count;
 
                 batch.index_offset = gr_batch_3d->index_count;

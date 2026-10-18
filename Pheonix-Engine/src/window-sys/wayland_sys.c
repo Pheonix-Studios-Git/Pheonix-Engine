@@ -2,11 +2,9 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdio.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
@@ -17,7 +15,6 @@
 #include <window-sys.h>
 #include <err-codes.h>
 #include <event-sys.h>
-#include <core/image.h>
 
 #include <wayland-client.h>
 
@@ -199,7 +196,7 @@ static const struct wl_output_listener g_output_listener = {
 
 __attribute__((unused))
 static int64_t append_window(struct window* win) {
-    struct winarray* node = (struct winarray*)malloc(sizeof(struct winarray));
+    struct winarray* node = (struct winarray*)alloc(sizeof(struct winarray));
     if (!node) return -1;
     
     node->win = win;
@@ -260,7 +257,7 @@ static void remove_window(int64_t handle) {
 
         if (nxt->next) nxt->next->prev = nxt->prev;
 
-        free(nxt);
+        dealloc(nxt);
     }
 }
 
@@ -271,7 +268,7 @@ static void destroy_all_windows(void) {
     for (size_t i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->win) {
             // TODO: Destroy Context and Window
-            free(nxt->win);
+            dealloc(nxt->win);
         }
         if (nxt->next) nxt = nxt->next;
         else break;
@@ -280,7 +277,7 @@ static void destroy_all_windows(void) {
     struct winarray* cur = nxt;
     for (size_t i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->prev) nxt = nxt->prev;
-        free(cur);
+        dealloc(cur);
         cur = nxt;
     }
 }
@@ -358,14 +355,14 @@ static t_err_codes wayland_init(void) {
 	// Load lib
 	g_wl_lib.lib = dlopen("libwayland-client.so.0", RTLD_LAZY);
 	if (!g_wl_lib.lib) {
-		fprintf(stderr, "[Wayland] Failed to load library 'libwayland-client.so.0': %s\n", dlerror());
+		fprints(s_stderr, "[Wayland] Failed to load library 'libwayland-client.so.0': %s\n", dlerror());
 		return ERR_WS_INIT_FAILED;
 	}
 
 	#define WL_LOAD_SYMBOL(lib, fn, name) { \
 		*(void**)(&(fn)) = dlsym((lib), (name)); \
 		if (!(fn)) { \
-			fprintf(stderr, "[Wayland] Failed to find symbol '%s'\n", (name)); \
+			fprints(s_stderr, "[Wayland] Failed to find symbol '%s'\n", (name)); \
 			goto lib_load_fail; \
 		} \
 	}
@@ -373,7 +370,7 @@ static t_err_codes wayland_init(void) {
 	#define WL_LOAD_DATA_SYMBOL(lib, var, name) { \
 		*(void**)(&(var)) = dlsym((lib), (name)); \
 		if (!(var)) { \
-			fprintf(stderr, "[Wayland] Failed to find symbol '%s'\n", (name)); \
+			fprints(s_stderr, "[Wayland] Failed to find symbol '%s'\n", (name)); \
 			goto lib_load_fail; \
 		} \
 	}
@@ -490,7 +487,7 @@ static t_err_codes wayland_init(void) {
 	init_failed:
 	lib_load_fail: {
 		if (g_wl_lib.lib) dlclose(g_wl_lib.lib);
-		memset(&g_wl_lib, 0, sizeof(struct wayland_lib));
+		fillbuf(&g_wl_lib, 0, sizeof(struct wayland_lib));
 		return ERR_WS_INIT_FAILED;
 	}
 }
@@ -523,7 +520,7 @@ static void wayland_shutdown(void) {
 	}
 	
 	dlclose(g_wl_lib.lib);
-	memset(&g_wl_lib, 0, sizeof(struct wayland_lib));
+	fillbuf(&g_wl_lib, 0, sizeof(struct wayland_lib));
 }
 
 __attribute__((unused))
@@ -532,7 +529,7 @@ static t_err_codes wayland_create(PX_Window* win, PX_GPU_Backend gpu_backend_api
     win->handle = -1;
 	win->gpu_backend_api = gpu_backend_api;
 
-    struct window* iwin = (struct window*)malloc(sizeof(struct window));
+    struct window* iwin = (struct window*)alloc(sizeof(struct window));
     if (!iwin) return ERR_ALLOC_FAILED;
 
 	iwin->display = g_display;

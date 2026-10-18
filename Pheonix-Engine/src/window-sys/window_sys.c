@@ -1,6 +1,4 @@
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
+#include <pstdlib.h>
 
 #include <window-sys.h>
 #include <rendering-sys.h>

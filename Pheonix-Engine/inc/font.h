@@ -1,6 +1,7 @@
 #pragma once
 
-#include <stdbool.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #include <err-codes.h>
 

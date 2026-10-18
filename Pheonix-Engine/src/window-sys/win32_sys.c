@@ -1,10 +1,7 @@
 #ifdef _WIN32
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdio.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #include <windows.h>
 
@@ -12,7 +9,6 @@
 #include <window-sys.h>
 #include <err-codes.h>
 #include <event-sys.h>
-#include <core/image.h>
 
 #include <external/tinyfiledialogs.h>
 
@@ -150,7 +146,7 @@ static const struct keysym_map g_keysym_map[] = {
 };
 
 static int64_t append_window(struct window* win) {
-    struct winarray* node = (struct winarray*)calloc(1, sizeof(struct winarray));
+    struct winarray* node = (struct winarray*)zalloc(sizeof(struct winarray));
     if (!node) return -1;
     
     node->win = win;
@@ -209,7 +205,7 @@ static void remove_window(int64_t handle) {
 
         if (nxt->next) nxt->next->prev = nxt->prev;
 
-        free(nxt);
+        dealloc(nxt);
     }
 }
 
@@ -227,8 +223,8 @@ static void destroy_all_windows(void) {
 				if (nxt->win->gl_hdc) ReleaseDC(nxt->win->hwnd, nxt->win->gl_hdc);
 			}
             if (nxt->win->hwnd) DestroyWindow(nxt->win->hwnd);
-			if (nxt->win->title) free(nxt->win->title);
-            free(nxt->win);
+			if (nxt->win->title) dealloc(nxt->win->title);
+            dealloc(nxt->win);
         }
         if (nxt->next) nxt = nxt->next;
         else break;
@@ -237,7 +233,7 @@ static void destroy_all_windows(void) {
     struct winarray* cur = nxt;
     for (size_t i = 0; i < PX_WS_MAX_WINDOWS; i++) {
         if (nxt->prev) nxt = nxt->prev;
-        free(cur);
+        dealloc(cur);
         cur = nxt;
     }
 }
@@ -480,7 +476,7 @@ static void win32_shutdown(void) {
     destroy_all_windows();
 
 	if (g_class.lpszClassName) UnregisterClassW(g_class.lpszClassName, g_main_hinstance);
-	memset(&g_class, 0, sizeof(WNDCLASSW));
+	fillbuf(&g_class, 0, sizeof(WNDCLASSW));
 }
 
 static t_err_codes win32_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
@@ -488,7 +484,7 @@ static t_err_codes win32_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) 
     win->handle = -1;
 	win->gpu_backend_api = gpu_backend_api;
 
-	struct window* iwin = (struct window*)calloc(1, sizeof(struct window));
+	struct window* iwin = (struct window*)zalloc(sizeof(struct window));
     if (!iwin) return ERR_ALLOC_FAILED;
 	iwin->queue = &win->queue;
 
@@ -496,19 +492,19 @@ static t_err_codes win32_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) 
 
 	int buffer_size = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
 	if (buffer_size <= 0) {
-		free(iwin);
+		dealloc(iwin);
 		return ERR_WS_WINDOW_CREATION_FAILED;
 	}
 	
-	wchar_t* wide_title = (wchar_t*)calloc(buffer_size, sizeof(wchar_t));
+	wchar_t* wide_title = (wchar_t*)zalloc(buffer_size * sizeof(wchar_t));
 	if (!wide_title) {
-		free(iwin);
+		dealloc(iwin);
 		return ERR_ALLOC_FAILED;
 	}
 
 	if (MultiByteToWideChar(CP_UTF8, 0, title, -1, wide_title, buffer_size) == 0) {
-		free(wide_title);
-		free(iwin);
+		dealloc(wide_title);
+		dealloc(iwin);
 		return ERR_WS_WINDOW_CREATION_FAILED;
 	}
 
@@ -516,8 +512,8 @@ static t_err_codes win32_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) 
 
 	HWND hwnd = CreateWindowExW(0, L"Pheonix Engine", wide_title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, win->width, win->height, NULL, NULL, g_main_hinstance, iwin);
 	if (hwnd == 0) {
-		free(iwin);
-		free(wide_title);
+		dealloc(iwin);
+		dealloc(wide_title);
 		return ERR_WS_WINDOW_CREATION_FAILED;
 	}
 
@@ -527,8 +523,8 @@ static t_err_codes win32_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) 
 	int64_t handle = append_window(iwin);
 	if (handle < 0) {
 		DestroyWindow(hwnd);
-		free(iwin);
-		free(wide_title);
+		dealloc(iwin);
+		dealloc(wide_title);
 		return ERR_WS_WINDOW_CREATION_FAILED;
 	}
 
@@ -550,8 +546,8 @@ static void win32_destroy(PX_Window* win) {
 		if (iwin->gl_hdc) ReleaseDC(iwin->hwnd, iwin->gl_hdc);
 	}
 	if (iwin->hwnd) DestroyWindow(iwin->hwnd);
-	if (iwin->title) free(iwin->title);
-	free(iwin);
+	if (iwin->title) dealloc(iwin->title);
+	dealloc(iwin);
 
 	remove_window(win->handle);
     win->handle = -1;
@@ -622,7 +618,7 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
 		default: return ERR_WS_INVALID_GPU_BACKEND;
 	}
 
-	PX_WContext* ctx = (PX_WContext*)calloc(1, sizeof(PX_WContext));
+	PX_WContext* ctx = (PX_WContext*)zalloc(sizeof(PX_WContext));
 	if (!ctx) return ERR_ALLOC_FAILED;
 
 	ctx->iwin = (void*)iwin;
@@ -632,7 +628,7 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
 		case PX_RS_GPU_BACKEND_OPENGL: {
 			HDC hdc = GetDC(iwin->hwnd);
 			if (!hdc) {
-				free(ctx);
+				dealloc(ctx);
 				return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
@@ -650,38 +646,38 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
 			int pixel_format = ChoosePixelFormat(hdc, &pfd);
             if (!pixel_format) {
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
             if (!SetPixelFormat(hdc, pixel_format, &pfd)) {
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
 
 			HGLRC temp_ctx = wglCreateContext(hdc);
             if (!temp_ctx) {
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
 
             if (!wglMakeCurrent(hdc, temp_ctx)) {
                 wglDeleteContext(temp_ctx);
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
 
             
 			PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
 			if (!wglCreateContextAttribsARB) {
-				fprintf(stderr, "[Win32] Failed to get 'wglCreateContextAttribsARB' function!\n");
+				fprints(s_stderr, "[Win32] Failed to get 'wglCreateContextAttribsARB' function!\n");
 
 				wglMakeCurrent(NULL, NULL);
                 wglDeleteContext(temp_ctx);
 				ReleaseDC(iwin->hwnd, hdc);
-				free(ctx);
+				dealloc(ctx);
 				return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
@@ -706,7 +702,7 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
                 wglMakeCurrent(NULL, NULL);
                 wglDeleteContext(temp_ctx);
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
 
@@ -716,7 +712,7 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
             if (!wglMakeCurrent(hdc, gl_ctx)) {
                 wglDeleteContext(gl_ctx);
                 ReleaseDC(iwin->hwnd, hdc);
-                free(ctx);
+                dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
             }
 
@@ -738,7 +734,7 @@ static t_err_codes win32_create_ctx(PX_Window* win) {
 		}
 
 		default: { // Can't occur but good safety
-			free(ctx);
+			dealloc(ctx);
 			return ERR_WS_INVALID_GPU_BACKEND;
 		}
 	}
@@ -776,10 +772,10 @@ static char* win32_open_file_selector_dialog(void) {
     if (!file) return NULL;
     
     size_t sz = strlen(file);
-    char* f = (char*)malloc(sz + 1);
+    char* f = (char*)alloc(sz + 1);
 	if (!f) return NULL;
 
-    memcpy(f, file, sz);
+    copybuf(f, file, sz);
     f[sz] = '\0';
     return f;
 }

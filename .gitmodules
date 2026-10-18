@@ -1,0 +1,3 @@
+[submodule "PheonixCore"]
+	path = PheonixCore
+	url = https://github.com/AkshuDev/PheonixCore

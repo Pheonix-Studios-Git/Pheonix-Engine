@@ -6,6 +6,9 @@
 PROJECT_EXTENSION ?=
 PROJECT := pheonix-engine$(PROJECT_EXTENSION)
 
+PSTDLIB_DIR := ../PheonixCore/pheonix_stdlib
+PSTDLIB_BIN_DIR := $(PSTDLIB_DIR)/bin
+
 SRC_DIR := src
 INC_DIR := inc
 BUILD_DIR := build
@@ -26,6 +29,9 @@ endif
 ifeq ($(ARCH),i686)
     ARCH := x86
 endif
+
+PSTDLIB_LINK_TARGET := $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH)/libpstdlib.so
+PSTDLIB_PSRT := $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH)/psrt.o
 
 GLOBAL_MACROS := 
 POSIX := 0
@@ -51,7 +57,7 @@ TARGET := $(OUT_DIR)/$(PROJECT)
 CSTD := -std=c11
 WARN := -Wall -Wextra -Wno-pedantic -Wstrict-prototypes
 DEFS :=
-INCS := -I$(INC_DIR)
+INCS := -I$(INC_DIR) -I $(PSTDLIB_DIR)/inc
 
 OPT_LEVEL ?= 3
 TARGET_CPU ?= generic
@@ -64,8 +70,8 @@ ifneq ($(TARGET_CPU),generic)
     CPU_FLAGS += -march=$(TARGET_CPU) -mtune=$(TARGET_CPU)
 endif
 
-CFLAGS := $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
-LDFLAGS := $(EXTRA) -lm -lpng -lassimp -ldl $(EXTRA_LDFLAGS)
+CFLAGS := -fno-builtin -nostdlib $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
+LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH) -lpstdlib -lm -lassimp -ldl $(EXTRA_LDFLAGS)
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
@@ -80,7 +86,10 @@ dirs:
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(OUT_DIR)
 
-$(TARGET): $(OBJ)
+$(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT):
+	@make --no-print-directory -C $(PSTDLIB_DIR) OS=$(OS) ARCH=$(ARCH) BUILD=$(BUILD) CC=$(CC)
+
+$(TARGET): $(OBJ) $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT)
 	@echo "Linking $@"
 	$(CC) $(OBJ) -o $@ $(LDFLAGS)
 
@@ -105,10 +114,6 @@ help:
 	@echo "  make debug          Build debug mode"
 	@echo "  make release        Build release mode (UNOPTIMIZED)"
 	@echo "  make clean          Remove all build artifacts"
-	@echo ""
-	@echo "Variables:"
-	@echo "  MODE=debug|release  Select build mode"
-	@echo "  CC=<compiler>       Override C compiler"
 	@echo ""
 	@echo "Output:"
 	@echo "  $(BIN_DIR)/<os>/<arch>/$(PROJECT)"

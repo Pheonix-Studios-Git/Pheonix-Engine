@@ -1,12 +1,10 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
+#include <pstdlib.h>
 
 #include <decoders/unicode.h>
 
-uint32_t px_utf8_decode(const char** s) {
+u32 px_utf8_decode(const char** s) {
     const unsigned char* p = (const unsigned char*)*s;
-    uint32_t cp;
+    u32 cp;
 
     if (p[0] < 0x80) {
         cp = p[0];

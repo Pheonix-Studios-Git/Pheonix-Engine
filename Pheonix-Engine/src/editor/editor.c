@@ -1,6 +1,5 @@
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #include <pheonix-engine.h>
 #include <rendering-sys.h>
@@ -576,7 +575,7 @@ static void editor_onclick_string_property(PX_Event_TextField* self, char* text,
 	if (p->size != sizeof(char*)) return;
 
 	if (*(char**)p->data && *(char**)p->data != text) {
-		free(*(char**)p->data);
+		dealloc(*(char**)p->data);
 		
 		p->data_not_owned = true;
 		*(char**)p->data = text;
@@ -744,7 +743,7 @@ void editor_draw_properties_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos,
 					if (property_text_fields[i].identifier > 0) event_unregister_widget(property_text_fields[i].identifier);
 				}
 				
-				memset(property_text_fields, 0, sizeof(property_text_fields));
+				fillbuf(property_text_fields, 0, sizeof(property_text_fields));
 				property_text_field_ptr = 0;
 
 				property_cur_2d_object = NULL;
@@ -764,7 +763,7 @@ void editor_draw_properties_panel(PX_AnchorRect local_viewport, PX_Vector2 mpos,
 					if (property_text_fields[i].identifier > 0) event_unregister_widget(property_text_fields[i].identifier);
 				}
 				
-				memset(property_text_fields, 0, sizeof(property_text_fields));
+				fillbuf(property_text_fields, 0, sizeof(property_text_fields));
 				property_text_field_ptr = 0;
 
 				property_cur_3d_object = NULL;

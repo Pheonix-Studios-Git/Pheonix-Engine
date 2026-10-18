@@ -15,3 +15,4 @@ void px_util_dropdown_destroy(PX_Dropdown* dd);
 PX_Property* px_util_property_add(const char* label, PX_PropertyType type, PX_Property* parent);
 void px_util_destroy_properties(PX_Property* start, PX_Property** field);
 char px_util_ekeycode_to_char(PX_EKeycodes key, bool caps, bool shift);
+char* px_util_get_exec_path(void);

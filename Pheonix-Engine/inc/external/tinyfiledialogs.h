@@ -89,8 +89,14 @@ misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 */
 
+/*
+IMPORTANT NOTE: THIS FILE HAS BEEN ALTERED BY THE ORIGNAL AUTHOR OF "Pheonix-Engine"
+*/
+
 #ifndef TINYFILEDIALOGS_H
 #define TINYFILEDIALOGS_H
+
+#include <core/stdlib_pstdlib_connector.h>
 
 /* #define TINYFD_NOLIB */
 /* On windows, define TINYFD_NOLIB here

@@ -1,5 +1,4 @@
-#include <stdbool.h>
-#include <string.h>
+#include <pstdlib.h>
 
 #include <pheonix-engine.h>
 
@@ -68,7 +67,7 @@ void event_sys_deinit(void) {
 			}
 		}
 
-		free(event_widgets);
+		dealloc(event_widgets);
 	}
 
 	event_widgets = NULL;
@@ -244,18 +243,18 @@ void event_text_input(PX_AnchorRect local_viewport, PX_Event_TextField* field, P
 
 void event_send_gsignal(PX_Event_GSignal* signal) {
     if (!signal || signal->type == EVENT_GSIGNAL_UNKNOWN || gsignals_count >= MAX_GLOBAL_SIGNALS) return;
-    memcpy(&gsignal_queue[gsignals_count], signal, sizeof(PX_Event_GSignal));
+    copybuf(&gsignal_queue[gsignals_count], signal, sizeof(PX_Event_GSignal));
     gsignals_count++;
 }
 
 void event_pop_gsignal(PX_Event_GSignal* out) {
     if (gsignals_count < 1 || gsignals_count > MAX_GLOBAL_SIGNALS) {
         PX_Event_GSignal zeroed = {0};
-        memcpy(out, &zeroed, sizeof(PX_Event_GSignal));
+        copybuf(out, &zeroed, sizeof(PX_Event_GSignal));
         return;
     }
     gsignals_count--;
-    memcpy(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
+    copybuf(out, &gsignal_queue[gsignals_count], sizeof(PX_Event_GSignal));
 }
 
 void event_handle_gsignals(PX_Event_GSignal* core_signal, bool* core_signal_active) {
@@ -267,7 +266,7 @@ void event_handle_gsignals(PX_Event_GSignal* core_signal, bool* core_signal_acti
 
     switch (s->type) {
         case EVENT_GSIGNAL_CORE_QUIT: {
-            memcpy(core_signal, s, sizeof(PX_Event_GSignal));
+            copybuf(core_signal, s, sizeof(PX_Event_GSignal));
             *core_signal_active = true;
             return;
 		}
@@ -294,16 +293,14 @@ size_t event_register_widget(PX_Event_Widget* widget) { // Returns Identifier ID
 
 	if (!event_widgets) {
 		// Allocate
-		event_widgets = (PX_Event_Widget*)calloc(EVENT_WIDGET_CAP_STEP, sizeof(PX_Event_Widget));
+		event_widgets = (PX_Event_Widget*)zalloc(EVENT_WIDGET_CAP_STEP * sizeof(PX_Event_Widget));
 		if (!event_widgets) return 0;
 
 		event_widget_cap = EVENT_WIDGET_CAP_STEP;
 	} else if (event_widget_count + 1 > event_widget_cap) {
 		// Realloc
-		PX_Event_Widget* nptr = (PX_Event_Widget*)realloc(event_widgets, sizeof(PX_Event_Widget)*(event_widget_cap+EVENT_WIDGET_CAP_STEP));
+		PX_Event_Widget* nptr = (PX_Event_Widget*)rzalloc(event_widgets, sizeof(PX_Event_Widget)*(event_widget_cap+EVENT_WIDGET_CAP_STEP));
 		if (!nptr) return 0;
-
-		memset((uint8_t*)nptr + (event_widget_cap*sizeof(PX_Event_Widget)), 0, EVENT_WIDGET_CAP_STEP*sizeof(PX_Event_Widget));
 
 		event_widget_cap += EVENT_WIDGET_CAP_STEP;
 		event_widgets = nptr;
@@ -333,7 +330,7 @@ void event_unregister_widget(size_t widget_identifier) {
 			// Release all event side allocations
 			if (!widget->text_field.tfield) goto remove;
 
-			if (widget->text_field.tfield->text) free(widget->text_field.tfield->text);
+			if (widget->text_field.tfield->text) dealloc(widget->text_field.tfield->text);
 
 			widget->text_field.tfield->text = NULL;
 			widget->text_field.tfield->text_cap = 0;
@@ -375,14 +372,14 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 		}
 
 		if (!active_text_field->text) {
-			active_text_field->text = (char*)calloc(TEXT_INPUT_CAP, sizeof(char));
+			active_text_field->text = (char*)zalloc(TEXT_INPUT_CAP);
 			if (!active_text_field->text) goto text_field_alloc_failed;
 
 			active_text_field->text_cap = TEXT_INPUT_CAP;
 			active_text_field->text_size = 0;
 			active_text_field->text_cursor = 0;
 		} else if (active_text_field->text_size + 2 > active_text_field->text_cap) {
-			char* nptr = (char*)realloc(active_text_field->text, active_text_field->text_cap + TEXT_INPUT_CAP);
+			char* nptr = (char*)rzalloc(active_text_field->text, active_text_field->text_cap + TEXT_INPUT_CAP);
 			if (!nptr) goto text_field_alloc_failed;
 
 			active_text_field->text = nptr;
@@ -393,7 +390,7 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 			active_text_field->text_cursor = active_text_field->text_size;
 
 		if (active_text_field->text_cursor != active_text_field->text_size) {
-			memmove(
+			movebuf(
 				active_text_field->text + active_text_field->text_cursor + 1,
 				active_text_field->text + active_text_field->text_cursor,
 				active_text_field->text_size - active_text_field->text_cursor + 1
@@ -421,7 +418,7 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 				if (active_text_field->text_cursor == active_text_field->text_size) {
 					active_text_field->text[--active_text_field->text_cursor] = '\0';
 				} else {
-					memmove(active_text_field->text + active_text_field->text_cursor - 1, active_text_field->text + active_text_field->text_cursor, active_text_field->text_size - active_text_field->text_cursor + 1);
+					movebuf(active_text_field->text + active_text_field->text_cursor - 1, active_text_field->text + active_text_field->text_cursor, active_text_field->text_size - active_text_field->text_cursor + 1);
 					active_text_field->text_cursor--;
 				}
 
@@ -434,7 +431,7 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 				if (active_text_field->text_cursor == active_text_field->text_size-1) {
 					active_text_field->text[active_text_field->text_cursor] = '\0';
 				} else {
-					memmove(active_text_field->text + active_text_field->text_cursor, active_text_field->text + active_text_field->text_cursor + 1, active_text_field->text_size + 2 - active_text_field->text_cursor);
+					movebuf(active_text_field->text + active_text_field->text_cursor, active_text_field->text + active_text_field->text_cursor + 1, active_text_field->text_size + 2 - active_text_field->text_cursor);
 				}
 				
 				active_text_field->text_size--;

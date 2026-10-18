@@ -2,19 +2,17 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdio.h>
+#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
+
 #include <unistd.h>
 #include <time.h>
 #include <dlfcn.h>
 
+#include <pheonix-engine.h>
 #include <window-sys.h>
 #include <err-codes.h>
 #include <event-sys.h>
-#include <core/image.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -262,13 +260,20 @@ static int glx_is_ext_supported(Display* dpy, int screen, const char* extName) {
 	if (!g_xlib.gl || !g_xlib.glXQueryExtensionsString) return -1;
 
     const char* exts = g_xlib.glXQueryExtensionsString(dpy, screen);
-    if (exts) return (strstr(exts, extName) != NULL);
+	if (!exts) return -1;
+	
+	char* exts_p = (char*)exts;
+	for (; *exts_p; exts_p++) {
+		if (strcmp((const char*)exts_p, extName) == 0) return 1;
+		
+		while (*exts_p && *exts_p != ' ') exts_p++;
+	}
 
     return -1;
 }
 
 static int append_window(struct window* win) {
-    struct winarray* node = (struct winarray*)malloc(sizeof(struct winarray));
+    struct winarray* node = (struct winarray*)alloc(sizeof(struct winarray));
     if (!node)
         return -1;
     
@@ -340,7 +345,7 @@ static void remove_window(int handle) {
         if (nxt->next)
             nxt->next->prev = nxt->prev;
 
-        free(nxt);
+        dealloc(nxt);
     }
 }
 
@@ -358,10 +363,10 @@ static void destroy_all_windows(void) {
 			g_xlib.XDestroyWindow(node->win->display, node->win->window);
 			if (node->win->colormap) g_xlib.XFreeColormap(node->win->display, node->win->colormap);
 
-            free(node->win);
+            dealloc(node->win);
         }
 
-        free(node);
+        dealloc(node);
         node = next;
     }
 
@@ -437,7 +442,7 @@ static t_err_codes x11_init(void) {
 	#define LOAD_SYM(lib, fn, name) { \
 		*(void**)(&(fn)) = dlsym((lib), (name)); \
 		if (!(fn)) { \
-			fprintf(stderr, "[X11] Failed to find symbol '%s'\n", (name)); \
+			fprints(s_stderr, "[X11] Failed to find symbol '%s'\n", (name)); \
 			goto failure; \
 		} \
 	}
@@ -445,7 +450,7 @@ static t_err_codes x11_init(void) {
 	#define GLX_LOAD_SYM(fn, name) { \
 		*(void**)(&(fn)) = xlib.glXGetProcAddressARB((const GLubyte*)(name)); \
 		if (!(fn)) { \
-			fprintf(stderr, "[X11] Failed to find GLX Symbol '%s'\n", (name)); \
+			fprints(s_stderr, "[X11] Failed to find GLX Symbol '%s'\n", (name)); \
 			goto failure; \
 		} \
 	}
@@ -546,7 +551,7 @@ static t_err_codes x11_init(void) {
 		if (xlib.gl) dlclose(xlib.gl);
 		if (xlib.xrender) dlclose(xlib.xrender);
 
-		memset(&g_xlib, 0, sizeof(struct x11_lib));
+		fillbuf(&g_xlib, 0, sizeof(struct x11_lib));
 		return ERR_WS_INIT_FAILED;
 	}
 }
@@ -562,7 +567,7 @@ static void x11_shutdown(void) {
 	if (g_xlib.x11) dlclose(g_xlib.x11);
 	if (g_xlib.gl) dlclose(g_xlib.gl);
 	if (g_xlib.xrender) dlclose(g_xlib.xrender);
-	memset(&g_xlib, 0, sizeof(struct x11_lib));
+	fillbuf(&g_xlib, 0, sizeof(struct x11_lib));
 }
 
 static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
@@ -572,7 +577,7 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
     win->handle = -1;
 	win->gpu_backend_api = gpu_backend_api;
 
-    struct window* iwin = (struct window*)calloc(1, sizeof(struct window));
+    struct window* iwin = (struct window*)zalloc(sizeof(struct window));
     if (!iwin) return ERR_ALLOC_FAILED;
 
     iwin->display = g_display;
@@ -591,27 +596,27 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 	switch (gpu_backend_api) {
 		case PX_RS_GPU_BACKEND_OPENGL: {
 			if (!g_xlib.gl || !g_xlib.glXGetVisualFromFBConfig) {
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_UNINITIALIZED;
 			}
 
 			GLXFBConfig config = x11_choose_fb_config(g_display);
 			if (!config) {
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 			iwin->glx_fb_config = config;
 
 			XVisualInfo* visual = g_xlib.glXGetVisualFromFBConfig(g_display, config);
 			if (!visual) {
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 
 			Colormap colormap = g_xlib.XCreateColormap(g_display, root, visual->visual, AllocNone);
 			if (!colormap) {
 				g_xlib.XFree(visual);
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 			iwin->colormap = colormap;
@@ -639,7 +644,7 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 
 			if (!iwin->window) {
 				g_xlib.XFreeColormap(g_display, iwin->colormap);
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 
@@ -650,13 +655,13 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 		case PX_RS_GPU_BACKEND_VULKAN: {
 			Visual* visual = DefaultVisual(g_display, g_screen);
 			if (!visual) {
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 
 			Colormap colormap = g_xlib.XCreateColormap(g_display, root, visual, AllocNone);
 			if (!colormap) {
-    			free(iwin);
+    			dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 			iwin->colormap = colormap;
@@ -684,14 +689,14 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 
 			if (!iwin->window) {
 				g_xlib.XFreeColormap(g_display, iwin->colormap);
-				free(iwin);
+				dealloc(iwin);
 				return ERR_WS_WINDOW_CREATION_FAILED;
 			}
 			break;
 		}
 		
 		default: {
-			free(iwin);
+			dealloc(iwin);
 			return ERR_WS_INVALID_GPU_BACKEND;
 		}
 	}
@@ -709,7 +714,7 @@ static t_err_codes x11_create(PX_Window* win, PX_GPU_Backend gpu_backend_api) {
 	if (handle < 0) {
 		g_xlib.XDestroyWindow(iwin->display, iwin->window);
 		if (iwin->colormap) g_xlib.XFreeColormap(iwin->display, iwin->colormap);
-		free(iwin);
+		dealloc(iwin);
 		return ERR_ALLOC_FAILED;
 	}
 	win->handle = handle;
@@ -726,7 +731,7 @@ static void x11_destroy(PX_Window* win) {
 
 	if (win->ctx_handle) {
 		PX_WContext* ctx = (PX_WContext*)(uintptr_t)win->ctx_handle;
-		free(ctx);
+		dealloc(ctx);
 		win->ctx_handle = 0;
 	}
 
@@ -737,7 +742,7 @@ static void x11_destroy(PX_Window* win) {
 	g_xlib.XDestroyWindow(iwin->display, iwin->window);\
 	if (iwin->colormap) g_xlib.XFreeColormap(iwin->display, iwin->colormap);
 
-    free(iwin);
+    dealloc(iwin);
     remove_window(win->handle);
     
     win->handle = -1;
@@ -854,185 +859,6 @@ static t_err_codes x11_poll_events(PX_Window* win) {
 
 static t_err_codes x11_engine_splash(void) {
     return ERR_SUCCESS; // TODO: Fix Splash Screen
-    int logo_w, logo_h;
-    int logo_bit_depth;
-    int logo_color_type;
-
-    unsigned char* logo_data;
-    t_err_codes err = image_get_png("assets/icons/logo.png", &logo_w, &logo_h, &logo_bit_depth, &logo_color_type, &logo_data);
-    if (err != ERR_SUCCESS)
-        return err;
-
-    for (int y = 0; y < logo_h; y++) {
-        uint8_t* p = logo_data + y * logo_w * 4;
-        for (int x = 0; x < logo_w; x++) {
-            uint8_t a = p[3];
-            p[0] = (p[0] * a) / 255;
-            p[1] = (p[1] * a) / 255;
-            p[2] = (p[2] * a) / 255;
-            p += 4;
-        }
-    }
-
-    for (int y = 0; y < logo_h; y++) {
-        uint8_t* p = logo_data + y * logo_w * 4;
-        for (int x = 0; x < logo_w; x++) {
-            uint8_t r = p[0];
-            uint8_t g = p[1];
-            uint8_t b = p[2];
-            uint8_t a = p[3];
-
-            r = (r * a) / 255;
-            g = (g * a) / 255;
-            b = (b * a) / 255;
-
-            p[0] = b;
-            p[1] = g;
-            p[2] = r;
-            p[3] = a;
-
-            p += 4;
-        }
-    }
-
-    Window root = RootWindow(g_display, g_screen);
-
-    XVisualInfo vinfo;
-    if (!g_xlib.XMatchVisualInfo(g_display, g_screen, 32, TrueColor, &vinfo)) {
-        free(logo_data);
-        return ERR_WS_INIT_FAILED;
-    }
-
-    XSetWindowAttributes attrs = {0};
-    attrs.colormap = g_xlib.XCreateColormap(
-        g_display,
-        root,
-        vinfo.visual,
-        AllocNone
-    );
-    attrs.border_pixel = 0;
-    attrs.background_pixel = 0;
-
-    Window win = g_xlib.XCreateWindow(
-        g_display, root,
-        0, 0,
-        600, 300,
-        0, vinfo.depth,
-        InputOutput, vinfo.visual,
-        CWColormap | CWBorderPixel | CWBackPixel,
-        &attrs
-    );
-
-    Atom wm_window_type = g_xlib.XInternAtom(g_display, "_NET_WM_WINDOW_TYPE", False);
-    Atom wm_window_type_splash = g_xlib.XInternAtom(g_display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
-    g_xlib.XChangeProperty(g_display, win, wm_window_type, XA_ATOM, 32, PropModeReplace, (unsigned char*)&wm_window_type_splash, 1);
-    Atom wm_state = g_xlib.XInternAtom(g_display, "_NET_WM_STATE", False);
-    Atom wm_state_above = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_ABOVE", False);
-    Atom wm_state_skip_taskbar = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
-    Atom wm_state_skip_pager = g_xlib.XInternAtom(g_display, "_NET_WM_STATE_SKIP_PAGER", False);
-
-    Atom states[] = {
-        wm_state_above,
-        wm_state_skip_taskbar,
-        wm_state_skip_pager
-    };
-
-    g_xlib.XChangeProperty(g_display, win, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
-
-    g_xlib.XSelectInput(g_display, win, ExposureMask | KeyPressMask | StructureNotifyMask);
-    g_xlib.XMapRaised(g_display, win);
-
-    for (;;) {
-        XEvent e;
-        g_xlib.XNextEvent(g_display, &e);
-        if (e.type == MapNotify && e.xmap.window == win) break;
-    }
- 
-    int screen_w = DisplayWidth(g_display, g_screen);
-    int screen_h = DisplayHeight(g_display, g_screen);
-
-    int win_w = logo_w;
-    int win_h = logo_h;
-
-    g_xlib.XMoveWindow(g_display, win, (screen_w - win_w) / 2, (screen_h - win_h) / 2);
-
-    Picture win_pic, img_pic;
-
-    XRenderPictFormat* win_fmt = g_xlib.XRenderFindVisualFormat(g_display, vinfo.visual);
-    win_pic = g_xlib.XRenderCreatePicture(g_display, win, win_fmt, 0, NULL);
-
-    Pixmap bg_pix = g_xlib.XCreatePixmap(g_display, win, 600, 300, vinfo.depth);
-    GC bg_gc = g_xlib.XCreateGC(g_display, bg_pix, 0, NULL);
-    g_xlib.XSetForeground(g_display, bg_gc, BlackPixel(g_display, g_screen));
-    g_xlib.XFillRectangle(g_display, bg_pix, bg_gc, 0, 0, 600, 300);
-
-    Picture bg_pic = g_xlib.XRenderCreatePicture(g_display, bg_pix, g_xlib.XRenderFindVisualFormat(g_display, vinfo.visual), 0, NULL);
-    g_xlib.XRenderComposite(g_display, PictOpSrc, bg_pic, None, win_pic, 0, 0, 0, 0, 0, 0, 600, 300);
-
-    XRenderPictFormat* pix_fmt = g_xlib.XRenderFindStandardFormat(g_display, PictStandardARGB32);
-    Pixmap pix = g_xlib.XCreatePixmap(g_display, win, logo_w, logo_h, 32);
-
-    GC gc = g_xlib.XCreateGC(g_display, pix, 0, NULL);
-    XImage* ximage = g_xlib.XCreateImage(
-        g_display, vinfo.visual,
-        32, ZPixmap, 0,
-        (char*)logo_data, logo_w, logo_h, 32, logo_w * 4
-    );
-    g_xlib.XPutImage(g_display, pix, gc, ximage, 0, 0, 0, 0, logo_w, logo_h);
-    
-    img_pic = g_xlib.XRenderCreatePicture(g_display, pix, pix_fmt, 0, NULL);
- 
-    int logo_scaled_w = logo_w / 2;
-    int logo_scaled_h = logo_h / 2;
-    int dest_x = screen_w - logo_scaled_w - 50; // right-center offset
-    int dest_y = (screen_h - logo_scaled_h) / 2;
-
-    g_xlib.XRenderComposite(
-        g_display, PictOpOver,
-        img_pic, None,
-        win_pic,
-        0, 0,
-        0, 0,
-        dest_x, dest_y,
-        logo_scaled_w, logo_scaled_h
-    );
-
-    g_xlib.XFlush(g_display);
-
-    struct timespec start, now;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    while (1) {
-        while (g_xlib.XPending(g_display)) {
-            XEvent e;
-            g_xlib.XNextEvent(g_display, &e);
-        }
-
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000;
-        if (elapsed_ms >= 3000)
-            break;
-
-        nanosleep(&(struct timespec){0, 1000000}, NULL);
-    }
-
-    g_xlib.XDestroyWindow(g_display, win);
-    g_xlib.XSync(g_display, False);
-
-    if (img_pic) g_xlib.XRenderFreePicture(g_display, img_pic);
-    if (win_pic) g_xlib.XRenderFreePicture(g_display, win_pic);
-    g_xlib.XFreeColormap(g_display, attrs.colormap);
-    g_xlib.XFreePixmap(g_display, pix);
-    g_xlib.XFreeGC(g_display, gc);
-    if (bg_pic) g_xlib.XRenderFreePicture(g_display, bg_pic);
-    g_xlib.XFreePixmap(g_display, bg_pix);
-    g_xlib.XFreeGC(g_display, bg_gc);
-
-    ximage->data = NULL;
-    XDestroyImage(ximage);
-
-    free(logo_data);
-
-    return ERR_SUCCESS;
 }
 
 static t_err_codes x11_window_design(PX_Window* win, PX_WindowDesign* design) {
@@ -1068,7 +894,7 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 		default: return ERR_WS_INVALID_GPU_BACKEND;
 	}
 
-	PX_WContext* ctx = (PX_WContext*)calloc(1, sizeof(PX_WContext));
+	PX_WContext* ctx = (PX_WContext*)zalloc(sizeof(PX_WContext));
 	if (!ctx) return ERR_ALLOC_FAILED;
 
 	ctx->iwin = (void*)iwin;
@@ -1077,12 +903,12 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 	switch (win->gpu_backend_api) {
 		case PX_RS_GPU_BACKEND_OPENGL: {
 			if (!g_xlib.gl || !g_xlib.glXCreateContextAttribsARB || !g_xlib.glXMakeCurrent || !g_xlib.glXDestroyContext) {
-				free(ctx);
+				dealloc(ctx);
 				return ERR_WS_UNINITIALIZED;
 			}
 
 			if (!iwin->glx_fb_config) {
-				free(ctx);
+				dealloc(ctx);
 				return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
@@ -1101,13 +927,13 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 
 			GLXContext gl_ctx = g_xlib.glXCreateContextAttribsARB(iwin->display, iwin->glx_fb_config, 0, True, ctx_attribs);
 			if (!gl_ctx) {
-				free(ctx);
+				dealloc(ctx);
 				return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
 			if (!g_xlib.glXMakeCurrent(iwin->display, iwin->window, gl_ctx)) {
 				g_xlib.glXDestroyContext(iwin->display, gl_ctx);
-				free(ctx);
+				dealloc(ctx);
                 return ERR_WS_CONTEXT_CREATION_FAILED;
 			}
 
@@ -1129,7 +955,7 @@ static t_err_codes x11_create_ctx(PX_Window* win) {
 		}
 
 		default: { // Can't occur but good safety
-			free(ctx);
+			dealloc(ctx);
 			return ERR_WS_INVALID_GPU_BACKEND;
 		}
 	}
@@ -1168,10 +994,10 @@ static char* x11_open_file_selector_dialog(void) {
     if (!file) return NULL;
     
     size_t sz = strlen(file);
-    char* f = (char*)malloc(sz + 1);
+    char* f = (char*)alloc(sz + 1);
 	if (!f) return NULL;
 	
-    memcpy(f, file, sz);
+    copybuf(f, file, sz);
     f[sz] = '\0';
     return f;
 }
@@ -1225,7 +1051,7 @@ static t_err_codes x11_set_fullscreen(PX_Window* win, bool enabled) {
 	Atom wm_state = g_xlib.XInternAtom(iwin->display, "_NET_WM_STATE", False);
 	Atom wm_fs = g_xlib.XInternAtom(iwin->display, "_NET_WM_STATE_FULLSCREEN", False);
 
-	memset(&xev, 0, sizeof(xev));
+	fillbuf(&xev, 0, sizeof(xev));
     xev.type = ClientMessage;
     xev.xclient.window = iwin->window;
     xev.xclient.message_type = wm_state;
