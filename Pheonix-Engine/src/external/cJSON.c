@@ -1231,7 +1231,7 @@ CJSON_PUBLIC(cJSON *) cJSON_ParseWithLength(const char *value, size_t buffer_len
 
 #define cjson_min(a, b) (((a) < (b)) ? (a) : (b))
 
-static unsigned char *print(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
+static unsigned char *cJSON_iprint(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
 {
     static const size_t default_buffer_size = 256;
     printbuffer buffer[1];
@@ -1301,12 +1301,12 @@ fail:
 /* Render a cJSON item/entity/structure to text. */
 CJSON_PUBLIC(char *) cJSON_Print(const cJSON *item)
 {
-    return (char*)print(item, true, &global_hooks);
+    return (char*)cJSON_iprint(item, true, &global_hooks);
 }
 
 CJSON_PUBLIC(char *) cJSON_PrintUnformatted(const cJSON *item)
 {
-    return (char*)print(item, false, &global_hooks);
+    return (char*)cJSON_iprint(item, false, &global_hooks);
 }
 
 CJSON_PUBLIC(char *) cJSON_PrintBuffered(const cJSON *item, int prebuffer, cJSON_bool fmt)

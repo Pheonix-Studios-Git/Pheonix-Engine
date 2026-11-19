@@ -71,7 +71,7 @@ ifneq ($(TARGET_CPU),generic)
 endif
 
 CFLAGS := -fno-builtin -nostdlib $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
-LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH) -lpstdlib -lm -lassimp -ldl $(EXTRA_LDFLAGS)
+LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH) -lpstdlib -lm -lassimp -Wl,--no-as-needed -ldl $(EXTRA_LDFLAGS)
 
 # === Sources ===
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')

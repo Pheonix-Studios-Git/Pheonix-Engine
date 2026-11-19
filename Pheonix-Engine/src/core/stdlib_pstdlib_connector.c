@@ -1,6 +1,8 @@
 #include <core/stdlib_pstdlib_connector.h>
 #include <stdio.h>
 
+#include <sys/stat.h>
+
 typedef struct __PLibFileNode {
     FILE* token;
     PIO_Stream* stream;
@@ -12,6 +14,8 @@ FILE* stdout = NULL;
 FILE* stderr = NULL;
 
 static __PLibFileNode* __plib_files;
+static char** __argv = NULL;
+static int __argc = 0;
 
 static __PLibFileNode* __plib_find_file(FILE* file) {
     for (__PLibFileNode* node = __plib_files; node; node = node->next) {
@@ -59,10 +63,13 @@ static bool __plib_remove_file(FILE* file, PIO_Stream** stream) {
     return false;
 }
 
-void __plib_init_standard_streams(void) {
+void __stdlib_plib_connector_init(int argc, char** argv) {
     stdin = __plib_pstream_to_file(s_stdin);
     stdout = __plib_pstream_to_file(s_stdout);
     stderr = __plib_pstream_to_file(s_stderr);
+
+	__argc = argc;
+	__argv = argv;
 }
 
 void* malloc(usize_t size) {
@@ -111,6 +118,14 @@ char* strcpy(char* dest, const char* src) {
 	if (!dest || !src) return NULL;
 
     if (!strcopy(dest, src)) return NULL;
+    return dest;
+}
+
+char* strncpy(char* dest, const char* src, size_t n) {
+	if (!dest || !src) return NULL;
+	if (n == 0) return dest;
+
+    if (!strscopy(dest, src, n)) return NULL;
     return dest;
 }
 
@@ -246,10 +261,24 @@ int fgetc(FILE* file) {
     if (stream == NULL) return EOF;
 
     unsigned char ch;
-    usize_t bytes = sread(stream, &ch, 1);
-    if (bytes != 1) return EOF;
+    usize_t bytes = sread(stream, &ch, sizeof(char));
+    if (bytes != sizeof(char)) return EOF;
 
     return (int)ch;
+}
+
+int getc(FILE* file) {
+	return fgetc(file);
+}
+
+int ungetc(int c, FILE* file) {
+    PIO_Stream* stream = __plib_file_to_pstream(file);
+    if (stream == NULL) return EOF;
+
+    usize_t bytes = swrite(stream, &c, sizeof(char));
+    if (bytes != sizeof(char)) return EOF;
+
+    return (int)c;
 }
 
 char* fgets(char* str, int count, FILE* file) {
@@ -283,4 +312,49 @@ char* fgets(char* str, int count, FILE* file) {
 
 int setenv(const char* name, const char* value, int overwrite) {
     return assignenv(name, value, overwrite != 0) ? 0 : -1;
+}
+
+int abs(int x) {
+	if (x < 0) return x * -1;
+	return x;
+}
+
+// Functions that are not defined in header
+int stat(const char* restrict path, struct stat* restrict statbuf) {
+	#ifdef __linux__
+		#if defined(__x86_64__) || defined(__amd64__)
+			return __plib_syscall(0x4, (llong_t)(uintptr_t)path, (llong_t)(uintptr_t)statbuf);
+		#elif defined(__i386__) || defined(__i386)
+			return __plib_syscall(0x6A, (llong_t)(uintptr_t)path, (llong_t)(uintptr_t)statbuf);
+		#elif defined(__arm__) || defined(_M_ARM)
+			return __plib_syscall(0x6A, (llong_t)(uintptr_t)path, (llong_t)(uintptr_t)statbuf);
+		#elif defined(__aarch64__) || defined(_M_ARM64)
+			return __plib_syscall(0x4F, -100LL, (llong_t)(uintptr_t)path, (llong_t)(uintptr_t)statbuf, 0);
+		#else
+			#error "Unsupported Architecture!"
+		#endif
+	#else
+		#error "Unsupported OS!"
+	#endif
+
+	return -1;
+}
+
+// Internal
+__attribute__((noreturn)) void __fortify_fail_abort(bool need_backtrace, const char* msg) {
+ 	fprints(s_stderr, "*** %s ***: %s terminated\n", msg, (need_backtrace && __argc > 0 && __argv[0]) ? __argv[0] : "<unknown>");
+	abort();
+}
+
+__attribute__((noreturn)) void __fortify_fail(const char* msg) {
+  	__fortify_fail_abort(true, msg);
+}
+
+__attribute__((noreturn)) void __stack_chk_fail(void) {
+  	__fortify_fail_abort(false, "stack smashing detected");
+}
+
+__attribute__((noreturn)) void __assert_fail(const char* __assertion, const char* __file, unsigned int __line, const char* __function) {
+	fprints(s_stderr, "%s:%u: %s: Assertion '%s' failed\n", __file, __line, __function, __assertion);
+	abort();
 }

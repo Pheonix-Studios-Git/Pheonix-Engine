@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef INT_MAX
+	#undef INT_MAX
+#endif
+#ifdef INT_MIN
+	#undef INT_MIN
+#endif
+#ifdef UINT_MAX
+	#undef UINT_MAX
+#endif
+
 #include <pstdlib.h>
 #include <pio.h>
 
@@ -26,7 +36,7 @@ extern FILE* stderr;
 extern "C" {
 #endif
 
-void __plib_init_standard_streams(void);
+void __stdlib_plib_connector_init(int argc, char** argv);
 
 void* malloc(size_t size);
 void* calloc(size_t nmemb, size_t size);
@@ -39,6 +49,7 @@ void* memmove(void* dest, const void* src, size_t size);
 int memcmp(const void* a, const void* b, size_t size);
 
 char* strcpy(char* dest, const char* src);
+char* strncpy(char* dest, const char* src, size_t n);
 
 FILE* fopen(const char* path, const char* mode);
 int fclose(FILE* file);
@@ -50,10 +61,12 @@ long ftell(FILE* file);
 int feof(FILE* file);
 int ferror(FILE* file);
 
+int getc(FILE* file);
 int fgetc(FILE* file);
-char* fgets(char* str, int count, FILE* stream);
-
+int ungetc(int c, FILE* file);
+char* fgets(char* str, int count, FILE* file);
 int setenv(const char* name, const char* value, int overwrite);
+int abs(int x);
 
 #ifdef __cplusplus
 }
