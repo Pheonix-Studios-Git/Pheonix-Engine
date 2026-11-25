@@ -358,3 +358,28 @@ __attribute__((noreturn)) void __assert_fail(const char* __assertion, const char
 	fprints(s_stderr, "%s:%u: %s: Assertion '%s' failed\n", __file, __line, __function, __assertion);
 	abort();
 }
+
+// DETOUR if used
+#ifdef USE_DETOUR
+	const DTLinker* detour_api = NULL;
+
+	void* dlopen(const char* filename, int flags) {
+		if (!detour_api) return NULL;
+		return detour_api->dlopen(filename, flags);
+	}
+
+	void* dlsym(void* handle, const char* symbol) {
+		if (!detour_api) return NULL;
+		return detour_api->dlsym(handle, symbol);
+	}
+
+	int dlclose(void* handle) {
+		if (!detour_api) return -1;
+		return detour_api->dlclose(handle);
+	}
+
+	char* dlerror(void) {
+		if (!detour_api) return "Detour has not been initialized";
+		return detour_api->dlerror();
+	}
+#endif

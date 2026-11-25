@@ -71,3 +71,14 @@ int abs(int x);
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef USE_DETOUR
+	#include <detour.h>
+
+	extern const DTLinker *detour_api;
+
+	void* dlopen(const char* filename, int flags);
+	void* dlsym(void* handle, const char* symbol);
+	int dlclose(void* handle);
+	char* dlerror(void);
+#endif

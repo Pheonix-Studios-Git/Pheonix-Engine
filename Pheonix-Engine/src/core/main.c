@@ -725,7 +725,12 @@ static double enginef_core_get_time(void) {
 }
 
 int main(int argc, char** argv) {
-	__plib_init_standard_streams();
+	__stdlib_plib_connector_init(argc, argv);
+
+	#ifdef USE_DETOUR
+		detour_api = detour_init(argv);
+		if (!detour_api) return ERR_LOADER_INITIALIZATION_FAILED;
+	#endif
 	
     // Important Variables
     t_err_codes last_err = ERR_SUCCESS;

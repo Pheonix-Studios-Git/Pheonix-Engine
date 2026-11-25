@@ -990,16 +990,18 @@ static t_err_codes x11_swap_buffers(PX_Window* win) {
 }
 
 static char* x11_open_file_selector_dialog(void) {
-    const char* file = tinyfd_openFileDialog("Select File", "", 0, NULL, NULL, 0);
-    if (!file) return NULL;
+	return NULL;
+
+    // const char* file = tinyfd_openFileDialog("Select File", "", 0, NULL, NULL, 0);
+    // if (!file) return NULL;
     
-    size_t sz = strlen(file);
-    char* f = (char*)alloc(sz + 1);
-	if (!f) return NULL;
+    // size_t sz = strlen(file);
+    // char* f = (char*)alloc(sz + 1);
+	// if (!f) return NULL;
 	
-    copybuf(f, file, sz);
-    f[sz] = '\0';
-    return f;
+    // copybuf(f, file, sz);
+    // f[sz] = '\0';
+    // return f;
 }
 
 static t_err_codes x11_set_mouse_locked(PX_Window* win, bool locked) {

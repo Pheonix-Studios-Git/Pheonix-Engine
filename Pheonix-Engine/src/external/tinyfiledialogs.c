@@ -87,6 +87,8 @@ misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 */
 
+#ifdef USE_TINYFILEDIALOGS
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6069,4 +6071,6 @@ tinyfd_messageBox("The selected hexcolor is",
 #pragma warning(default:4996)
 #pragma warning(default:4100)
 #pragma warning(default:4706)
+#endif
+
 #endif

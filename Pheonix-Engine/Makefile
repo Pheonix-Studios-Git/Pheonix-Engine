@@ -61,7 +61,7 @@ INCS := -I$(INC_DIR) -I $(PSTDLIB_DIR)/inc
 
 OPT_LEVEL ?= 3
 TARGET_CPU ?= generic
-EXTRA ?=
+EXTRA ?= -I libs/detour -DUSE_DETOUR # Detour usage, until PDL
 EXTRA_LDFLAGS ?=
 
 CPU_FLAGS :=
@@ -74,6 +74,8 @@ CFLAGS := -fno-builtin -nostdlib $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-ali
 LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH) -lpstdlib -lm -lassimp -Wl,--no-as-needed -ldl $(EXTRA_LDFLAGS)
 
 # === Sources ===
+EXTRA_OBJ ?= libs/detour/loader.o # Detour usage, until PDL
+
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
 OBJ := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
 
@@ -89,9 +91,9 @@ dirs:
 $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT):
 	@make --no-print-directory -C $(PSTDLIB_DIR) OS=$(OS) ARCH=$(ARCH) BUILD=$(BUILD) CC=$(CC)
 
-$(TARGET): $(OBJ) $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT)
+$(TARGET): $(OBJ) $(EXTRA_OBJ) $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT)
 	@echo "Linking $@"
-	$(CC) $(OBJ) -o $@ $(LDFLAGS)
+	$(CC) $(OBJ) $(EXTRA_OBJ) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
