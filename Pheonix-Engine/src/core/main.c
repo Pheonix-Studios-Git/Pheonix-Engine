@@ -838,13 +838,13 @@ int main(int argc, char** argv) {
 	// size_t tmp_path_len = strlen(engine_exec_path) + PX_OS_BASE_DIR_LEN + 32; // +32 because : PX_OS_PATH_SLASH + PX_OS_PATH_SLASH + main path + NULL
 	// char* tmp_path = (char*)zalloc(tmp_path_len);
 	// if (!tmp_path) {
-	// 	perror("Error: Failed to allocate memory!\n");
+	// 	fperror("Error: Failed to allocate memory!\n");
     //     px_ws_destroy(&engine_window_main);
     //     px_ws_shutdown();
     //     return ERR_ALLOC_FAILED;
 	// }
 
-	// snprintf(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "assets/fonts/psdf/roboto.psdf", engine_exec_path);
+	// fmsprint(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "assets/fonts/psdf/roboto.psdf", engine_exec_path);
 
     engine_font_ui = px_font_load("assets/fonts/psdf/roboto.psdf");
 	// dealloc(tmp_path);

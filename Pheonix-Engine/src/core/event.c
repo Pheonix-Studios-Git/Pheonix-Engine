@@ -8,8 +8,6 @@
 #include <rendering-sys.h>
 #include <font.h>
 
-#include <ctype.h>
-
 #include <event-sys/keycodes.h>
 
 #define MAX_GLOBAL_SIGNALS 64
@@ -356,14 +354,14 @@ static bool handle_active_text_input_key_press(PX_EKeycodes key, bool pressed) {
 	if (c != '\0') {
 		switch (active_text_field->type) {
 			case PX_EVENT_TEXTFIELD_TYPE_NORMAL: break;
-			case PX_EVENT_TEXTFIELD_TYPE_NUMERIC: { if (!isdigit(c)) { return true; } break; }
-			case PX_EVENT_TEXTFIELD_TYPE_ALPHA: { if (!isalpha(c)) { return true; } break; }
+			case PX_EVENT_TEXTFIELD_TYPE_NUMERIC: { if (!c_is_digit(c)) { return true; } break; }
+			case PX_EVENT_TEXTFIELD_TYPE_ALPHA: { if (!c_is_alpha(c)) { return true; } break; }
 			case PX_EVENT_TEXTFIELD_TYPE_FLOATING: {
-				if (!isdigit(c) && c == '.') {
+				if (!c_is_digit(c) && c == '.') {
 					if (active_text_field->floating_point_set) return true;
 					active_text_field->floating_point_set = true;
 					break;
-				} else if (!isdigit(c)) return true;
+				} else if (!c_is_digit(c)) return true;
 
 				break;
 			}

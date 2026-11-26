@@ -3,6 +3,11 @@
 
 #include <sys/stat.h>
 
+#include <time.h>
+#ifdef _WIN32
+	#include <windows.h>
+#endif
+
 typedef struct __PLibFileNode {
     FILE* token;
     PIO_Stream* stream;
@@ -267,6 +272,13 @@ int fgetc(FILE* file) {
     return (int)ch;
 }
 
+int fflush(FILE* file) {
+	PIO_Stream* stream = __plib_file_to_pstream(file);
+    if (stream == NULL) return EOF;
+
+	return sflush(stream) ? 0 : -1;
+}
+
 int getc(FILE* file) {
 	return fgetc(file);
 }
@@ -319,6 +331,92 @@ int abs(int x) {
 	return x;
 }
 
+char* strrchr(const char* str, int ch) {
+	return (char*)strfindc(str, ch, -1);
+}
+
+double strtod(const char* str, char** endptr) {
+	(void)endptr;
+	return str_to_double(str);
+}
+
+float strtof(const char* str, char** endptr) {
+	(void)endptr;
+	return str_to_float(str);
+}
+
+long strtol(const char* restrict nptr, char** restrict endptr, int base) {
+	(void)endptr;
+	return (long)str_to_i64((const char*)nptr, base);
+}
+
+unsigned long strtoul(const char* restrict nptr, char** restrict endptr, int base) {
+	(void)endptr;
+	return (unsigned long)str_to_u64((const char*)nptr, base);
+}
+
+long long strtoll(const char* restrict nptr, char** restrict endptr, int base) {
+	(void)endptr;
+	return (long long)str_to_i64((const char*)nptr, base);
+}
+
+unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, int base) {
+	(void)endptr;
+	return (unsigned long long)str_to_u64((const char*)nptr, base);
+}
+
+char* strcat(char* restrict dest, const char* restrict src) {
+    if (!dest || !src) return NULL;
+
+    char* end = dest;
+    while (*end) end++;
+    if (!strcopy(end, src)) return NULL;
+
+    return dest;
+}
+
+int tolower(int ch) {
+    if ((unsigned)ch - 'A' <= 'Z' - 'A') return ch + ('a' - 'A');
+    return ch;
+}
+
+time_t time(time_t* timer) {
+	#ifdef _WIN32
+		FILETIME ft;
+		ULARGE_INTEGER uli;
+
+		GetSystemTimeAsFileTime(&ft);
+
+		uli.LowPart = ft.dwLowDateTime;
+		uli.HighPart = ft.dwHighDateTime;
+
+		uint64_t seconds = (uli.QuadPart / 10000000ULL) - 11644473600ULL;
+		time_t result = (time_t)seconds;
+
+		if (timer) *timer = result;
+
+		return result;
+	#else
+		struct timespec ts;
+
+		#if defined(__x86_64__) || defined(__amd64__)
+			long result = __plib_syscall(228, 0, (llong_t)(uintptr_t)&ts);
+		#elif defined(__i386__) || defined(__i386)
+			long result = __plib_syscall(265, 0, (llong_t)(uintptr_t)&ts);
+		#elif defined(__aarch64__) || defined(_M_ARM64)
+			long result = __plib_syscall(113, 0, (llong_t)(uintptr_t)&ts);
+		#elif defined(__arm__) || defined(_M_ARM)
+			long result = __plib_syscall(263, 0, (llong_t)(uintptr_t)&ts);
+		#else
+			#error "Unsupported Architecture!"
+		#endif
+
+		if (result < 0) return (time_t)-1;
+		if (timer) *timer = (time_t)ts.tv_sec;
+		return (time_t)ts.tv_sec;
+	#endif
+}
+
 // Functions that are not defined in header
 int stat(const char* restrict path, struct stat* restrict statbuf) {
 	#ifdef __linux__
@@ -334,7 +432,15 @@ int stat(const char* restrict path, struct stat* restrict statbuf) {
 			#error "Unsupported Architecture!"
 		#endif
 	#else
-		#error "Unsupported OS!"
+		PIO_FileMD f = {0};
+		if (!sfile_md(path, &f, NULL)) return -1;
+
+		statbuf->st_ctime = f.created_time;
+		statbuf->st_mtime = f.modified_time;
+		statbuf->st_atime = f.last_access_time;
+		statbuf->st_size = f.file_size;
+
+		return 0;
 	#endif
 
 	return -1;

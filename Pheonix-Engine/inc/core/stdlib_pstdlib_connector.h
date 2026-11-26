@@ -10,8 +10,9 @@
 	#undef UINT_MAX
 #endif
 
-#include <pstdlib.h>
+#include <stddef.h> // for size_t
 #include <pio.h>
+#include <pstdlib.h>
 
 struct _IO_FILE;
 typedef struct _IO_FILE FILE;
@@ -24,7 +25,6 @@ typedef u64 uint64_t;
 typedef u32 uint32_t;
 typedef u16 uint16_t;
 typedef u8 uint8_t;
-typedef size_t usize_t;
 typedef uptr_t uintptr_t;
 typedef ptr_t intptr_t;
 
@@ -48,8 +48,18 @@ void* memcpy(void* dest, const void* src, size_t size);
 void* memmove(void* dest, const void* src, size_t size);
 int memcmp(const void* a, const void* b, size_t size);
 
+char* strrchr(const char* str, int ch);
 char* strcpy(char* dest, const char* src);
 char* strncpy(char* dest, const char* src, size_t n);
+double strtod(const char* str, char** endptr);
+float strtof(const char* str, char** endptr);
+long strtol(const char* restrict nptr, char** restrict endptr, int base);
+
+unsigned long strtoul(const char* restrict nptr, char** restrict endptr, int base);
+long long strtoll(const char* restrict nptr, char** restrict endptr, int base);
+unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, int base);
+char* strcat(char* restrict dest, const char* restrict src);
+int tolower(int ch);
 
 FILE* fopen(const char* path, const char* mode);
 int fclose(FILE* file);
@@ -60,6 +70,7 @@ void rewind(FILE* file);
 long ftell(FILE* file);
 int feof(FILE* file);
 int ferror(FILE* file);
+int fflush(FILE* file);
 
 int getc(FILE* file);
 int fgetc(FILE* file);

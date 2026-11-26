@@ -192,9 +192,9 @@ static char gMessageUnix[] = "\
 #endif
 
 #ifdef _MSC_VER
-#pragma warning(disable:4996) /* allows usage of strncpy, strcpy, strcat, sprintf, fopen */
-#pragma warning(disable:4100) /* allows usage of strncpy, strcpy, strcat, sprintf, fopen */
-#pragma warning(disable:4706) /* allows usage of strncpy, strcpy, strcat, sprintf, fopen */
+#pragma warning(disable:4996) /* allows usage of strncpy, strcpy, strcat, fsprint, fopen */
+#pragma warning(disable:4100) /* allows usage of strncpy, strcpy, strcat, fsprint, fopen */
+#pragma warning(disable:4706) /* allows usage of strncpy, strcpy, strcat, fsprint, fopen */
 #endif
 
 static char * getPathWithoutFinalSlash(
@@ -303,9 +303,9 @@ static void RGB2Hex( unsigned char const aRGB [3] ,
 		if ( aRGB )
 		{
 #if defined(__GNUC__) && defined(_WIN32)
-			sprintf(aoResultHexRGB, "#%02hx%02hx%02hx",
+			fsprint(aoResultHexRGB, "#%02hx%02hx%02hx",
 #else
-			sprintf(aoResultHexRGB, "#%02hhx%02hhx%02hhx",
+			fsprint(aoResultHexRGB, "#%02hhx%02hhx%02hhx",
 #endif
 				aRGB[0], aRGB[1], aRGB[2]);
 			/* printf("aoResultHexRGB %s\n", aoResultHexRGB); */
@@ -889,12 +889,12 @@ static char const * inputBoxWinGui(
 
 	if (aDefaultInput)
 	{
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.vbs",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.vbs",
 			getenv("USERPROFILE"));
 	}
 	else
 	{
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.hta",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.hta",
 			getenv("USERPROFILE"));
 	}
 	lIn = fopen(lDialogString, "w");
@@ -926,7 +926,7 @@ static char const * inputBoxWinGui(
 	}
 	else
 	{
-		sprintf(lDialogString, "\n\
+		fsprint(lDialogString, "\n\
 <html>\n\
 <head>\n\
 <title>%s</title>\n\
@@ -1061,7 +1061,7 @@ name = 'txt_input' value = '' style = 'float:left;width:100%%' ><BR>\n\
 
 	if (aDefaultInput)
 	{
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.txt",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.txt",
 			getenv("USERPROFILE"));
 		if (!(lIn = fopen(lDialogString, "r")))
 		{
@@ -1074,12 +1074,12 @@ name = 'txt_input' value = '' style = 'float:left;width:100%%' ><BR>\n\
 		fclose(lIn);
 		remove(lDialogString);
 
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.vbs",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.vbs",
 			getenv("USERPROFILE"));
 	}
 	else
 	{
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.txt",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.txt",
 			getenv("USERPROFILE"));
 		if (!(lIn = fopen(lDialogString, "r")))
 		{
@@ -1093,7 +1093,7 @@ name = 'txt_input' value = '' style = 'float:left;width:100%%' ><BR>\n\
 
 		wipefile(lDialogString);
 		remove(lDialogString);
-		sprintf(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.hta",
+		fsprint(lDialogString, "%s\\AppData\\Local\\Temp\\tinyfd.hta",
 			getenv("USERPROFILE"));
 	}
 	remove(lDialogString);
@@ -3387,24 +3387,24 @@ static int tkinter2Present ( void )
 	{
 		lTkinter2Present = 0 ;
 		strcpy(gPython2Name , "python" ) ;
-		sprintf ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
+		fsprint ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
 		if ( ! detectPresence(gPython2Name)
                  || ! (lTkinter2Present = tryCommand(lPythonCommand)) )
 		{
 			strcpy(gPython2Name , "python2" ) ;
 			if ( detectPresence(gPython2Name) )
 			{
-				sprintf ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
+				fsprint ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
 				lTkinter2Present = tryCommand(lPythonCommand);
 			}
 			else
 			{
 				for ( i = 9 ; i >= 0 ; i -- )
 				{
-					sprintf ( gPython2Name , "python2.%d" , i ) ;
+					fsprint ( gPython2Name , "python2.%d" , i ) ;
 					if ( detectPresence(gPython2Name) )
 					{
-						sprintf ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
+						fsprint ( lPythonCommand , "%s %s" , gPython2Name , lPythonParams ) ;
 						lTkinter2Present = tryCommand(lPythonCommand);
 						break ;
 					}
@@ -5648,13 +5648,13 @@ char const * tinyfd_colorChooser(
 to set mycolor to choose color default color {");
 		}
 
-		sprintf(lTmp, "%d", 256 * lDefaultRGB[0] ) ;
+		fsprint(lTmp, "%d", 256 * lDefaultRGB[0] ) ;
 		strcat(lDialogString, lTmp ) ;
 		strcat(lDialogString, "," ) ;
-		sprintf(lTmp, "%d", 256 * lDefaultRGB[1] ) ;
+		fsprint(lTmp, "%d", 256 * lDefaultRGB[1] ) ;
 		strcat(lDialogString, lTmp ) ;
 		strcat(lDialogString, "," ) ;
-		sprintf(lTmp, "%d", 256 * lDefaultRGB[2] ) ;
+		fsprint(lTmp, "%d", 256 * lDefaultRGB[2] ) ;
 		strcat(lDialogString, lTmp ) ;
 		strcat(lDialogString, "}' " ) ;
 		strcat ( lDialogString ,
@@ -5675,19 +5675,19 @@ to set mycolor to choose color default color {");
 		if ( zenity3Present() )
 		{
 			if (aTitle&&!strcmp(aTitle,"tinyfd_query")){strcpy(tinyfd_response,"zenity3");return (char const *)1;}
-			sprintf ( lDialogString ,
+			fsprint ( lDialogString ,
 "zenity --color-selection --show-palette --color=%s" , lpDefaultHexRGB ) ;
 		}
 		else if ( matedialogPresent() )
 		{
 			if (aTitle&&!strcmp(aTitle,"tinyfd_query")){strcpy(tinyfd_response,"matedialog");return (char const *)1;}
-			sprintf ( lDialogString ,
+			fsprint ( lDialogString ,
 "matedialog --color-selection --show-palette --color=%s" , lpDefaultHexRGB ) ;
 		}
 		else
 		{
 			if (aTitle&&!strcmp(aTitle,"tinyfd_query")){strcpy(tinyfd_response,"qarma");return (char const *)1;}
-			sprintf ( lDialogString ,
+			fsprint ( lDialogString ,
 "qarma --color-selection --show-palette --color=%s" , lpDefaultHexRGB ) ;
 		}
 
@@ -5701,7 +5701,7 @@ to set mycolor to choose color default color {");
 	else if ( kdialogPresent() )
 	{
 		if (aTitle&&!strcmp(aTitle,"tinyfd_query")){strcpy(tinyfd_response,"kdialog");return (char const *)1;}
-		sprintf ( lDialogString ,
+		fsprint ( lDialogString ,
 "kdialog --getcolor --default '%s'" , lpDefaultHexRGB ) ;
 		if ( aTitle && strlen(aTitle) )
 		{
@@ -5720,7 +5720,7 @@ to set mycolor to choose color default color {");
 			strcat(lDialogString, aTitle) ;
 		}
 		strcat(lDialogString, "\" 0 60 ") ;
-		sprintf(lTmp,"%hhu %hhu %hhu",lDefaultRGB[0],
+		fsprint(lTmp,"%hhu %hhu %hhu",lDefaultRGB[0],
 				lDefaultRGB[1],lDefaultRGB[2]);
 		strcat(lDialogString, lTmp) ;
 		strcat(lDialogString, " 2>&1");

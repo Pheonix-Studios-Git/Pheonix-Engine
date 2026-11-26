@@ -112,14 +112,14 @@ static char* read_shader(const char* name) {
 	char* tmp_path = (char*)zalloc(tmp_path_len);
 	if (!tmp_path) return NULL;
 
-	// snprintf(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "shaders" PX_OS_PATH_SLASH "%s", engine_exec_path, name);
+	// fmsprint(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "shaders" PX_OS_PATH_SLASH "%s", engine_exec_path, name);
 	memcpy(tmp_path, "shaders/", 8);
 	memcpy(tmp_path + 8, name, strlen(name));
 
     PIO_Stream* f = sopen_file(tmp_path, PSTREAM_FLAG_READ);
     if (!f) {
 		fprints(s_stderr, "Failed to read shader file [%s : Shader]\n", tmp_path);
-		perror("\tReason ");
+		fperror("\tReason ");
 
 		dealloc(tmp_path);
 		return NULL;
@@ -134,7 +134,7 @@ static char* read_shader(const char* name) {
         sclose(f);
 
 		fprints(s_stderr, "Failed to allocate memory for reading shader file [%s : Shader]\n", tmp_path);
-		perror("\tReason ");
+		fperror("\tReason ");
 
 		dealloc(tmp_path);
         return NULL;
