@@ -262,7 +262,7 @@ static void ensureFinalSlash ( char * const aioString )
 	if ( aioString && strlen ( aioString ) )
 	{
 		char * lastcar = aioString + strlen ( aioString ) - 1 ;
-		if ( strncmp ( lastcar , SLASH , 1 ) )
+		if ( strscmp ( lastcar , SLASH , 1 ) )
 		{
 			strcat ( lastcar , SLASH ) ;
 		}
@@ -346,7 +346,7 @@ static void replaceSubStr ( char const * const aSource ,
 	}
 	p = aSource ;
 	* aoDestination = '\0' ;
-	while ( ( pOccurence = strstr ( p , aOldSubStr ) ) != NULL )
+	while ( ( pOccurence = strfindstr ( p , aOldSubStr , 0 ) ) != NULL )
 	{
 		strncat ( aoDestination , p , pOccurence - p ) ;
 		strcat ( aoDestination , lNewSubStr ) ;
@@ -1099,7 +1099,7 @@ name = 'txt_input' value = '' style = 'float:left;width:100%%' ><BR>\n\
 	remove(lDialogString);
 	free(lDialogString);
 	/* printf ( "aoBuff: %s\n" , aoBuff ) ; */
-	lResult = strncmp(aoBuff, "1", 1) ? 0 : 1;
+	lResult = strscmp(aoBuff, "1", 1) ? 0 : 1;
 	/* printf ( "lResult: %d \n" , lResult ) ; */
 	if (!lResult)
 	{
@@ -2265,7 +2265,7 @@ static char const * inputBoxWinConsole(
 	/* printf ( "aoBuff: %s\n" , aoBuff ) ; */
 
 	/* printf ( "aoBuff: %s len: %lu \n" , aoBuff , strlen(aoBuff) ) ; */
-    lResult =  strncmp ( aoBuff , "1" , 1) ? 0 : 1 ;
+    lResult =  strscmp ( aoBuff , "1" , 1) ? 0 : 1 ;
 	/* printf ( "lResult: %d \n" , lResult ) ; */
     if ( ! lResult )
     {
@@ -2514,7 +2514,7 @@ int tinyfd_messageBox (
 					printf("%s\n",aMessage);
 				}
 				printf("y/n: ");
-				lChar = (char) tolower ( _getch() ) ;
+				lChar = (char) c_to_lower ( _getch() ) ;
 				printf("\n\n");
 			}
 			while ( lChar != 'y' && lChar != 'n' ) ;
@@ -2529,7 +2529,7 @@ int tinyfd_messageBox (
 					printf("%s\n",aMessage);
 				}
 				printf("[O]kay/[C]ancel: ");
-				lChar = (char) tolower ( _getch() ) ;
+				lChar = (char) c_to_lower ( _getch() ) ;
 				printf("\n\n");
 			}
 			while ( lChar != 'o' && lChar != 'c' ) ;
@@ -2544,7 +2544,7 @@ int tinyfd_messageBox (
 					printf("%s\n", aMessage);
 				}
 				printf("[Y]es/[N]o/[C]ancel: ");
-				lChar = (char)tolower(_getch());
+				lChar = (char)c_to_lower(_getch());
 				printf("\n\n");
 			} while (lChar != 'y' && lChar != 'n' && lChar != 'c');
 			return (lChar == 'y') ? 1 : (lChar == 'n') ? 2 : 0 ;
@@ -2910,7 +2910,7 @@ static int detectPresence ( char const * const aExecutable )
     lIn = popen ( lTestedString , "r" ) ;
     if ( ( fgets ( lBuff , sizeof ( lBuff ) , lIn ) != NULL )
 		&& ( ! strchr ( lBuff , ':' ) )
-		&& ( strncmp(lBuff, "no ", 3) ) )
+		&& ( strscmp(lBuff, "no ", 3) ) )
     {	/* present */
     	pclose ( lIn ) ;
 	if (tinyfd_verbose) printf("detectPresence %s %d\n", aExecutable, 1);
@@ -4091,7 +4091,7 @@ tinyfdRes=$(cat /tmp/tinyfd.txt);echo $tinyfdBool$tinyfdRes") ;
 					printf("\n%s\n",aMessage);
 				}
 				printf("y/n: "); fflush(stdout);
-				lChar = tolower ( getchar() ) ;
+				lChar = c_to_lower ( getchar() ) ;
 				printf("\n\n");
 			}
 			while ( lChar != 'y' && lChar != 'n' );
@@ -4106,7 +4106,7 @@ tinyfdRes=$(cat /tmp/tinyfd.txt);echo $tinyfdBool$tinyfdRes") ;
 					printf("\n%s\n",aMessage);
 				}
 				printf("[O]kay/[C]ancel: "); fflush(stdout);
-				lChar = tolower ( getchar() ) ;
+				lChar = c_to_lower ( getchar() ) ;
 				printf("\n\n");
 			}
 			while ( lChar != 'o' && lChar != 'c' );
@@ -4121,7 +4121,7 @@ tinyfdRes=$(cat /tmp/tinyfd.txt);echo $tinyfdBool$tinyfdRes") ;
 					printf("\n%s\n",aMessage);
 				}
 				printf("[Y]es/[N]o/[C]ancel: "); fflush(stdout);
-				lChar = tolower ( getchar() ) ;
+				lChar = c_to_lower ( getchar() ) ;
 				printf("\n\n");
 			}
 			while ( lChar != 'y' && lChar != 'n' && lChar != 'c' );
@@ -4648,14 +4648,14 @@ frontmost of process \\\"Python\\\" to true' ''');");
 	/* printf ( "lBuff1: %s len: %lu \n" , lBuff , strlen(lBuff) ) ; */
 	if ( lWasBasicXterm )
 	{
-		if ( strstr(lBuff,"^[") ) /* esc was pressed */
+		if ( strfindstr(lBuff,"^[",0) ) /* esc was pressed */
 		{
 			free(lDialogString);
 			return NULL ;
 		}
 	}
 
-	lResult =  strncmp ( lBuff , "1" , 1) ? 0 : 1 ;
+	lResult =  strscmp ( lBuff , "1" , 1) ? 0 : 1 ;
 	/* printf ( "lResult: %d \n" , lResult ) ; */
 	if ( ! lResult )
 	{

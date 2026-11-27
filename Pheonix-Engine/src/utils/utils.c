@@ -1,6 +1,5 @@
 #include <pstdlib.h>
 #include <pio.h>
-#include <core/stdlib_pstdlib_connector.h>
 
 #include <rendering-sys.h>
 #include <font.h>

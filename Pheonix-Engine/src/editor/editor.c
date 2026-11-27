@@ -1,4 +1,3 @@
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 
 #include <pheonix-engine.h>
@@ -588,7 +587,7 @@ static void editor_onclick_float_property(PX_Event_TextField* self, char* text, 
 	PX_Property* p = (PX_Property*)callback_data;
 	if (p->size != sizeof(float)) return;
 
-	*(float*)p->data = strtof(text, NULL);
+	*(float*)p->data = str_to_float(text, NULL);
 }
 
 static void editor_draw_properties(PX_Property* p, PX_AnchorRect lvt, PX_Transform2 container, PX_Vector2 mpos, PX_Vector2 cpos, PX_Font* font, float font_size, PX_Color4 text_color) {

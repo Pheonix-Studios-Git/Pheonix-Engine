@@ -19,9 +19,8 @@
         https://glad.dav1d.de/#profile=compatibility&language=c&specification=gl&loader=on&api=gl%3D4.5
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <pstdlib.h>
+#include <pio.h>
 #include <external/glad_opengl_4_5.h>
 
 static void* get_proc(const char *namez);
@@ -181,7 +180,7 @@ static int get_exts(void) {
         num_exts_i = 0;
         glGetIntegerv(GL_NUM_EXTENSIONS, &num_exts_i);
         if (num_exts_i > 0) {
-            exts_i = (char **)malloc((size_t)num_exts_i * (sizeof *exts_i));
+            exts_i = (char **)alloc((size_t)num_exts_i * (sizeof *exts_i));
         }
 
         if (exts_i == NULL) {
@@ -192,9 +191,9 @@ static int get_exts(void) {
             const char *gl_str_tmp = (const char*)glGetStringi(GL_EXTENSIONS, index);
             size_t len = strlen(gl_str_tmp);
 
-            char *local_str = (char*)malloc((len+1) * sizeof(char));
+            char *local_str = (char*)alloc((len+1) * sizeof(char));
             if(local_str != NULL) {
-                memcpy(local_str, gl_str_tmp, (len+1) * sizeof(char));
+                copybuf(local_str, gl_str_tmp, (len+1) * sizeof(char));
             }
             exts_i[index] = local_str;
         }
@@ -207,9 +206,9 @@ static void free_exts(void) {
     if (exts_i != NULL) {
         int index;
         for(index = 0; index < num_exts_i; index++) {
-            free((char *)exts_i[index]);
+            dealloc((char *)exts_i[index]);
         }
-        free((void *)exts_i);
+        dealloc((void *)exts_i);
         exts_i = NULL;
     }
 }
@@ -227,7 +226,7 @@ static int has_ext(const char *ext) {
         }
 
         while(1) {
-            loc = strstr(extensions, ext);
+            loc = strfindstr(extensions, ext, 0);
             if(loc == NULL) {
                 return 0;
             }
@@ -2448,7 +2447,7 @@ static void find_coreGL(void) {
 
     for (i = 0;  prefixes[i];  i++) {
         const size_t length = strlen(prefixes[i]);
-        if (strncmp(version, prefixes[i], length) == 0) {
+        if (strscmp(version, prefixes[i], length) == 0) {
             version += length;
             break;
         }
@@ -2458,7 +2457,19 @@ static void find_coreGL(void) {
 #ifdef _MSC_VER
     sscanf_s(version, "%d.%d", &major, &minor);
 #else
-    sscanf(version, "%d.%d", &major, &minor);
+	char* minor_version = NULL;
+	major = str_to_int(version, &minor_version, 0);
+
+	if (!minor_version) goto skip_version;
+	if (minor_version[0] != '.') goto skip_version;
+	
+	minor_version++;
+	minor = str_to_int(minor_version, NULL, 0);
+
+	skip_version: {
+		major = 0;
+		minor = 0;
+	}
 #endif
 
     GLVersion.major = major; GLVersion.minor = minor;

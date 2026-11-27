@@ -34,9 +34,6 @@
 #pragma warning (disable : 4001)
 #endif
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <limits.h>
 #include <math.h>
 #include <float.h>
@@ -50,6 +47,8 @@
 #endif
 
 #include <external/cJSON_Utils.h>
+#include <pstdlib.h>
+#include <pio.h>
 
 /* define our own boolean type */
 #ifdef true
@@ -73,7 +72,7 @@ static unsigned char* cJSONUtils_strdup(const unsigned char* const string)
     {
         return NULL;
     }
-    memcpy(copy, string, length);
+    copybuf(copy, string, length);
 
     return copy;
 }
@@ -96,7 +95,7 @@ static int compare_strings(const unsigned char *string1, const unsigned char *st
         return strcmp((const char*)string1, (const char*)string2);
     }
 
-    for(; tolower(*string1) == tolower(*string2); (void)string1++, string2++)
+    for(; c_to_lower(*string1) == c_to_lower(*string2); (void)string1++, string2++)
     {
         if (*string1 == '\0')
         {
@@ -104,7 +103,7 @@ static int compare_strings(const unsigned char *string1, const unsigned char *st
         }
     }
 
-    return tolower(*string1) - tolower(*string2);
+    return c_to_lower(*string1) - c_to_lower(*string2);
 }
 
 /* securely comparison of floating-point variables */
@@ -138,7 +137,7 @@ static cJSON_bool compare_pointers(const unsigned char *name, const unsigned cha
                 pointer++;
             }
         }
-        else if ((!case_sensitive && (tolower(*name) != tolower(*pointer))) || (case_sensitive && (*name != *pointer)))
+        else if ((!case_sensitive && (c_to_lower(*name) != c_to_lower(*pointer))) || (case_sensitive && (*name != *pointer)))
         {
             return false;
         }
@@ -439,7 +438,7 @@ static cJSON *detach_path(cJSON *object, const unsigned char *path, const cJSON_
         goto cleanup;
     }
 
-    child_pointer = (unsigned char*)strrchr((char*)parent_pointer, '/'); /* last '/' */
+    child_pointer = (unsigned char*)strfindc((char*)parent_pointer, '/', -1); /* last '/' */
     if (child_pointer == NULL)
     {
         goto cleanup;
@@ -800,7 +799,7 @@ static void overwrite_item(cJSON * const root, const cJSON replacement)
         cJSON_Delete(root->child);
     }
 
-    memcpy(root, &replacement, sizeof(cJSON));
+    copybuf(root, &replacement, sizeof(cJSON));
 }
 
 static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_sensitive)
@@ -960,7 +959,7 @@ static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_
     /* split pointer in parent and child */
     parent_pointer = cJSONUtils_strdup((unsigned char*)path->valuestring);
     if (parent_pointer) {
-        child_pointer = (unsigned char*)strrchr((char*)parent_pointer, '/');
+        child_pointer = (unsigned char*)strfindc((char*)parent_pointer, '/', -1);
     }
     if (child_pointer != NULL)
     {

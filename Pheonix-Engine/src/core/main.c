@@ -718,9 +718,7 @@ void enginef_init_2drenderer_main_scene(void) {
 }
 
 static double enginef_core_get_time(void) {
-    time_t ts;
-    time(&ts);
-
+    nstime_t ts = time_ns();
     return (double)ts;
 }
 
@@ -914,7 +912,7 @@ int main(int argc, char** argv) {
             double fps = frames / fps_timer;
 
             fprint("\rFPS: %.2f", fps);
-            fflush(stdout);
+            sflush(s_stdout);
 
             frames = 0;
             fps_timer = 0.0;

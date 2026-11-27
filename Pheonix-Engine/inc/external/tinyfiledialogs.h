@@ -96,8 +96,6 @@ IMPORTANT NOTE: THIS FILE HAS BEEN ALTERED BY THE ORIGNAL AUTHOR OF "Pheonix-Eng
 #ifndef TINYFILEDIALOGS_H
 #define TINYFILEDIALOGS_H
 
-#include <core/stdlib_pstdlib_connector.h>
-
 /* #define TINYFD_NOLIB */
 /* On windows, define TINYFD_NOLIB here
 if you don't want to include the code creating the graphic dialogs.

@@ -23,7 +23,7 @@
 #ifndef cJSON__h
 #define cJSON__h
 
-#include <core/stdlib_pstdlib_connector.h>
+#include <pstdlib.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -127,7 +127,7 @@ typedef struct cJSON
 typedef struct cJSON_Hooks
 {
       /* malloc/free are CDECL on Windows regardless of the default calling convention of the compiler, so ensure the hooks allow passing those functions directly. */
-      void *(CJSON_CDECL *malloc_fn)(size_t sz);
+      void *(CJSON_CDECL *malloc_fn)(usize_t sz);
       void (CJSON_CDECL *free_fn)(void *ptr);
 } cJSON_Hooks;
 
@@ -154,11 +154,11 @@ CJSON_PUBLIC(void) cJSON_InitHooks(cJSON_Hooks* hooks);
 /* Memory Management: the caller is always responsible to free the results from all variants of cJSON_Parse (with cJSON_Delete) and cJSON_Print (with stdlib free, cJSON_Hooks.free_fn, or cJSON_free as appropriate). The exception is cJSON_PrintPreallocated, where the caller has full responsibility of the buffer. */
 /* Supply a block of JSON, and this returns a cJSON object you can interrogate. */
 CJSON_PUBLIC(cJSON *) cJSON_Parse(const char *value);
-CJSON_PUBLIC(cJSON *) cJSON_ParseWithLength(const char *value, size_t buffer_length);
+CJSON_PUBLIC(cJSON *) cJSON_ParseWithLength(const char *value, usize_t buffer_length);
 /* ParseWithOpts allows you to require (and check) that the JSON is null terminated, and to retrieve the pointer to the final byte parsed. */
 /* If you supply a ptr in return_parse_end and parsing fails, then return_parse_end will contain a pointer to the error so will match cJSON_GetErrorPtr(). */
 CJSON_PUBLIC(cJSON *) cJSON_ParseWithOpts(const char *value, const char **return_parse_end, cJSON_bool require_null_terminated);
-CJSON_PUBLIC(cJSON *) cJSON_ParseWithLengthOpts(const char *value, size_t buffer_length, const char **return_parse_end, cJSON_bool require_null_terminated);
+CJSON_PUBLIC(cJSON *) cJSON_ParseWithLengthOpts(const char *value, usize_t buffer_length, const char **return_parse_end, cJSON_bool require_null_terminated);
 
 /* Render a cJSON entity to text for transfer/storage. */
 CJSON_PUBLIC(char *) cJSON_Print(const cJSON *item);
@@ -298,7 +298,7 @@ CJSON_PUBLIC(char*) cJSON_SetValuestring(cJSON *object, const char *valuestring)
 #define cJSON_ArrayForEach(element, array) for(element = (array != NULL) ? (array)->child : NULL; element != NULL; element = element->next)
 
 /* malloc/free objects using the malloc/free functions that have been set with cJSON_InitHooks */
-CJSON_PUBLIC(void *) cJSON_malloc(size_t size);
+CJSON_PUBLIC(void *) cJSON_malloc(usize_t size);
 CJSON_PUBLIC(void) cJSON_free(void *object);
 
 #ifdef __cplusplus

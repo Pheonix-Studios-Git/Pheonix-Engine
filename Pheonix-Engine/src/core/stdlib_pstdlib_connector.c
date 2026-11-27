@@ -336,33 +336,27 @@ char* strrchr(const char* str, int ch) {
 }
 
 double strtod(const char* str, char** endptr) {
-	(void)endptr;
-	return str_to_double(str);
+	return str_to_double(str, endptr);
 }
 
 float strtof(const char* str, char** endptr) {
-	(void)endptr;
-	return str_to_float(str);
+	return str_to_float(str, endptr);
 }
 
 long strtol(const char* restrict nptr, char** restrict endptr, int base) {
-	(void)endptr;
-	return (long)str_to_i64((const char*)nptr, base);
+	return (long)str_to_i64((const char*)nptr, endptr, base);
 }
 
 unsigned long strtoul(const char* restrict nptr, char** restrict endptr, int base) {
-	(void)endptr;
-	return (unsigned long)str_to_u64((const char*)nptr, base);
+	return (unsigned long)str_to_u64((const char*)nptr, endptr, base);
 }
 
 long long strtoll(const char* restrict nptr, char** restrict endptr, int base) {
-	(void)endptr;
-	return (long long)str_to_i64((const char*)nptr, base);
+	return (long long)str_to_i64((const char*)nptr, endptr, base);
 }
 
 unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, int base) {
-	(void)endptr;
-	return (unsigned long long)str_to_u64((const char*)nptr, base);
+	return (unsigned long long)str_to_u64((const char*)nptr, endptr, base);
 }
 
 char* strcat(char* restrict dest, const char* restrict src) {

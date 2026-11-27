@@ -1,4 +1,3 @@
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 #include <pio.h>
 
@@ -112,9 +111,7 @@ static char* read_shader(const char* name) {
 	char* tmp_path = (char*)zalloc(tmp_path_len);
 	if (!tmp_path) return NULL;
 
-	// fmsprint(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "shaders" PX_OS_PATH_SLASH "%s", engine_exec_path, name);
-	memcpy(tmp_path, "shaders/", 8);
-	memcpy(tmp_path + 8, name, strlen(name));
+	fmsprint(tmp_path, tmp_path_len, "%s" PX_OS_PATH_SLASH PX_OS_BASE_DIR PX_OS_PATH_SLASH "shaders" PX_OS_PATH_SLASH "%s", engine_exec_path, name);
 
     PIO_Stream* f = sopen_file(tmp_path, PSTREAM_FLAG_READ);
     if (!f) {

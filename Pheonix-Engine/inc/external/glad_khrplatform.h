@@ -90,7 +90,6 @@
  *                                  int arg2) KHRONOS_APIATTRIBUTES;
  */
 
- #include <core/stdlib_pstdlib_connector.h>
 
 #if defined(__SCITECH_SNAP__) && !defined(KHRONOS_STATIC)
 #   define KHRONOS_STATIC 1
@@ -146,13 +145,13 @@
 
 
 /*
- * Using <stdint.h>
+ * Using <pstdlib.h>
  */
-#include <stdint.h>
-typedef int32_t                 khronos_int32_t;
-typedef uint32_t                khronos_uint32_t;
-typedef int64_t                 khronos_int64_t;
-typedef uint64_t                khronos_uint64_t;
+#include <pstdlib.h>
+typedef i32                 khronos_int32_t;
+typedef u32                 khronos_uint32_t;
+typedef i64                 khronos_int64_t;
+typedef u64                 khronos_uint64_t;
 #define KHRONOS_SUPPORT_INT64   1
 #define KHRONOS_SUPPORT_FLOAT   1
 /*

@@ -1,8 +1,5 @@
 #ifdef __linux__
 
-#define _POSIX_C_SOURCE 200809L
-
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 
 #include <unistd.h>

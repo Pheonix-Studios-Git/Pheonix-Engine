@@ -1,7 +1,5 @@
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 
-#include <math.h>
 #include <dlfcn.h>
 #include <cglm/cglm.h>
 

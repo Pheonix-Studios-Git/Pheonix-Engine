@@ -1,4 +1,3 @@
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 
 #include <rendering-sys.h>
@@ -109,7 +108,7 @@ size_t px_rs_loader_load_file(PX_Scene_3D* s, const char* path) {
             if (!obj.name) {
                 obj.name = "Unamed Mesh";
             } else {
-                strncpy(obj.name, mesh->mName.data, mesh->mName.length);
+                strscopy(obj.name, mesh->mName.data, mesh->mName.length);
                 obj.name[mesh->mName.length] = '\0';
             }
         } else {

@@ -1,4 +1,4 @@
-#ifdef __linux__
+#if defined(__linux__) && defined(INC_INCOMPLETE)
 
 #define _POSIX_C_SOURCE 200809L
 

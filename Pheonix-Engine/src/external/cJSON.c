@@ -37,11 +37,7 @@
 #pragma warning (disable : 4001)
 #endif
 
-#include <string.h>
-#include <stdio.h>
 #include <math.h>
-#include <stdlib.h>
-#include <limits.h>
 #include <float.h>
 
 #ifdef ENABLE_LOCALES
@@ -56,6 +52,8 @@
 #endif
 
 #include <external/cJSON.h>
+#include <pstdlib.h>
+#include <pio.h>
 
 /* define our own boolean type */
 #ifdef true
@@ -141,7 +139,7 @@ static int case_insensitive_strcmp(const unsigned char *string1, const unsigned 
         return 0;
     }
 
-    for(; tolower(*string1) == tolower(*string2); (void)string1++, string2++)
+    for(; c_to_lower(*string1) == c_to_lower(*string2); (void)string1++, string2++)
     {
         if (*string1 == '\0')
         {
@@ -149,7 +147,7 @@ static int case_insensitive_strcmp(const unsigned char *string1, const unsigned 
         }
     }
 
-    return tolower(*string1) - tolower(*string2);
+    return c_to_lower(*string1) - c_to_lower(*string2);
 }
 
 typedef struct internal_hooks
@@ -163,20 +161,20 @@ typedef struct internal_hooks
 /* work around MSVC error C2322: '...' address of dllimport '...' is not static */
 static void * CJSON_CDECL internal_malloc(size_t size)
 {
-    return malloc(size);
+    return alloc(size);
 }
 static void CJSON_CDECL internal_free(void *pointer)
 {
-    free(pointer);
+    dealloc(pointer);
 }
 static void * CJSON_CDECL internal_realloc(void *pointer, size_t size)
 {
-    return realloc(pointer, size);
+    return ralloc(pointer, size);
 }
 #else
-#define internal_malloc malloc
-#define internal_free free
-#define internal_realloc realloc
+#define internal_malloc alloc
+#define internal_free dealloc
+#define internal_realloc ralloc
 #endif
 
 /* strlen of character literals resolved at compile time */
@@ -200,7 +198,7 @@ static unsigned char* cJSON_strdup(const unsigned char* string, const internal_h
     {
         return NULL;
     }
-    memcpy(copy, string, length);
+    copybuf(copy, string, length);
 
     return copy;
 }
@@ -210,29 +208,29 @@ CJSON_PUBLIC(void) cJSON_InitHooks(cJSON_Hooks* hooks)
     if (hooks == NULL)
     {
         /* Reset hooks */
-        global_hooks.allocate = malloc;
-        global_hooks.deallocate = free;
-        global_hooks.reallocate = realloc;
+        global_hooks.allocate = alloc;
+        global_hooks.deallocate = dealloc;
+        global_hooks.reallocate = ralloc;
         return;
     }
 
-    global_hooks.allocate = malloc;
+    global_hooks.allocate = alloc;
     if (hooks->malloc_fn != NULL)
     {
         global_hooks.allocate = hooks->malloc_fn;
     }
 
-    global_hooks.deallocate = free;
+    global_hooks.deallocate = dealloc;
     if (hooks->free_fn != NULL)
     {
         global_hooks.deallocate = hooks->free_fn;
     }
 
-    /* use realloc only if both free and malloc are used */
+    /* use ralloc only if both free and alloc are used */
     global_hooks.reallocate = NULL;
-    if ((global_hooks.allocate == malloc) && (global_hooks.deallocate == free))
+    if ((global_hooks.allocate == alloc) && (global_hooks.deallocate == dealloc))
     {
-        global_hooks.reallocate = realloc;
+        global_hooks.reallocate = ralloc;
     }
 }
 
@@ -242,7 +240,7 @@ static cJSON *cJSON_New_Item(const internal_hooks * const hooks)
     cJSON* node = (cJSON*)hooks->allocate(sizeof(cJSON));
     if (node)
     {
-        memset(node, '\0', sizeof(cJSON));
+        fillbuf(node, '\0', sizeof(cJSON));
     }
 
     return node;
@@ -319,7 +317,7 @@ static cJSON_bool parse_number(cJSON * const item, parse_buffer * const input_bu
     }
 
     /* copy the number into a temporary buffer and replace '.' with the decimal point
-     * of the current locale (for strtod)
+     * of the current locale (for str_to_double)
      * This also takes care of '\0' not necessarily being available for marking the end of the input */
     for (i = 0; can_access_at_index(input_buffer, i); i++)
     {
@@ -352,14 +350,14 @@ static cJSON_bool parse_number(cJSON * const item, parse_buffer * const input_bu
         }
     }
 loop_end:
-    /* malloc for temporary buffer, add 1 for '\0' */
+    /* alloc for temporary buffer, add 1 for '\0' */
     number_c_string = (unsigned char *) input_buffer->hooks.allocate(number_string_length + 1);
     if (number_c_string == NULL)
     {
         return false; /* allocation failure */
     }
 
-    memcpy(number_c_string, buffer_at_offset(input_buffer), number_string_length);
+    copybuf(number_c_string, buffer_at_offset(input_buffer), number_string_length);
     number_c_string[number_string_length] = '\0';
 
     if (has_decimal_point)
@@ -368,13 +366,13 @@ loop_end:
         {
             if (number_c_string[i] == '.')
             {
-                /* replace '.' with the decimal point of the current locale (for strtod) */
+                /* replace '.' with the decimal point of the current locale (for str_to_double) */
                 number_c_string[i] = decimal_point;
             }
         }
     }
 
-    number = strtod((const char*)number_c_string, (char**)&after_end);
+    number = str_to_double((const char*)number_c_string, (char**)&after_end);
     if (number_c_string == after_end)
     {
         /* free the temporary buffer */
@@ -447,12 +445,12 @@ CJSON_PUBLIC(char*) cJSON_SetValuestring(cJSON *object, const char *valuestring)
 
     if (v1_len <= v2_len)
     {
-        /* strcpy does not handle overlapping string: [X1, X2] [Y1, Y2] => X2 < Y1 or Y2 < X1 */
+        /* strcopy does not handle overlapping string: [X1, X2] [Y1, Y2] => X2 < Y1 or Y2 < X1 */
         if (!( valuestring + v1_len < object->valuestring || object->valuestring + v2_len < valuestring ))
         {
             return NULL;
         }
-        strcpy(object->valuestring, valuestring);
+        strcopy(object->valuestring, valuestring);
         return object->valuestring;
     }
     copy = (char*) cJSON_strdup((const unsigned char*)valuestring, &global_hooks);
@@ -480,7 +478,7 @@ typedef struct
     internal_hooks hooks;
 } printbuffer;
 
-/* realloc printbuffer if necessary to have at least "needed" bytes more */
+/* ralloc printbuffer if necessary to have at least "needed" bytes more */
 static unsigned char* ensure(printbuffer * const p, size_t needed)
 {
     unsigned char *newbuffer = NULL;
@@ -533,7 +531,7 @@ static unsigned char* ensure(printbuffer * const p, size_t needed)
 
     if (p->hooks.reallocate != NULL)
     {
-        /* reallocate with realloc if available */
+        /* reallocate with ralloc if available */
         newbuffer = (unsigned char*)p->hooks.reallocate(p->buffer, newsize);
         if (newbuffer == NULL)
         {
@@ -557,7 +555,7 @@ static unsigned char* ensure(printbuffer * const p, size_t needed)
             return NULL;
         }
 
-        memcpy(newbuffer, p->buffer, p->offset + 1);
+        copybuf(newbuffer, p->buffer, p->offset + 1);
         p->hooks.deallocate(p->buffer);
     }
     p->length = newsize;
@@ -617,11 +615,11 @@ static cJSON_bool print_number(const cJSON * const item, printbuffer * const out
         length = fmsprint((char*)number_buffer, sizeof(number_buffer), "%1.15g", d);
 
         /* Check whether the original double can be recovered */
-        if ((sscanf((char*)number_buffer, "%lg", &test) != 1) || !compare_double((double)test, d))
-        {
+        // if ((sscanf((char*)number_buffer, "%lg", &test) != 1) || !compare_double((double)test, d))
+        // {
             /* If not, print with 17 decimal places of precision */
             length = fmsprint((char*)number_buffer, sizeof(number_buffer), "%1.17g", d);
-        }
+        // }
     }
 
     /* fsprint failed or buffer overrun occurred */
@@ -967,7 +965,7 @@ static cJSON_bool print_string_ptr(const unsigned char * const input, printbuffe
         {
             return false;
         }
-        strcpy((char*)output, "\"\"");
+        strcopy((char*)output, "\"\"");
 
         return true;
     }
@@ -1008,7 +1006,7 @@ static cJSON_bool print_string_ptr(const unsigned char * const input, printbuffe
     if (escape_characters == 0)
     {
         output[0] = '\"';
-        memcpy(output + 1, input, output_length);
+        copybuf(output + 1, input, output_length);
         output[output_length + 1] = '\"';
         output[output_length + 2] = '\0';
 
@@ -1114,7 +1112,7 @@ static parse_buffer *skip_utf8_bom(parse_buffer * const buffer)
         return NULL;
     }
 
-    if (can_access_at_index(buffer, 4) && (strncmp((const char*)buffer_at_offset(buffer), "\xEF\xBB\xBF", 3) == 0))
+    if (can_access_at_index(buffer, 4) && (strscmp((const char*)buffer_at_offset(buffer), "\xEF\xBB\xBF", 3) == 0))
     {
         buffer->offset += 3;
     }
@@ -1236,7 +1234,7 @@ static unsigned char *cJSON_iprint(const cJSON * const item, cJSON_bool format, 
     printbuffer buffer[1];
     unsigned char *printed = NULL;
 
-    memset(buffer, 0, sizeof(buffer));
+    fillbuf(buffer, 0, sizeof(buffer));
 
     /* create buffer */
     buffer->buffer = (unsigned char*) hooks->allocate(default_buffer_size);
@@ -1271,7 +1269,7 @@ static unsigned char *cJSON_iprint(const cJSON * const item, cJSON_bool format, 
         {
             goto fail;
         }
-        memcpy(printed, buffer->buffer, cjson_min(buffer->length, buffer->offset + 1));
+        copybuf(printed, buffer->buffer, cjson_min(buffer->length, buffer->offset + 1));
         printed[buffer->offset] = '\0'; /* just to be sure */
 
         /* free the buffer */
@@ -1368,21 +1366,21 @@ static cJSON_bool parse_value(cJSON * const item, parse_buffer * const input_buf
 
     /* parse the different types of values */
     /* null */
-    if (can_read(input_buffer, 4) && (strncmp((const char*)buffer_at_offset(input_buffer), "null", 4) == 0))
+    if (can_read(input_buffer, 4) && (strscmp((const char*)buffer_at_offset(input_buffer), "null", 4) == 0))
     {
         item->type = cJSON_NULL;
         input_buffer->offset += 4;
         return true;
     }
     /* false */
-    if (can_read(input_buffer, 5) && (strncmp((const char*)buffer_at_offset(input_buffer), "false", 5) == 0))
+    if (can_read(input_buffer, 5) && (strscmp((const char*)buffer_at_offset(input_buffer), "false", 5) == 0))
     {
         item->type = cJSON_False;
         input_buffer->offset += 5;
         return true;
     }
     /* true */
-    if (can_read(input_buffer, 4) && (strncmp((const char*)buffer_at_offset(input_buffer), "true", 4) == 0))
+    if (can_read(input_buffer, 4) && (strscmp((const char*)buffer_at_offset(input_buffer), "true", 4) == 0))
     {
         item->type = cJSON_True;
         item->valueint = 1;
@@ -1431,7 +1429,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "null");
+            strcopy((char*)output, "null");
             return true;
 
         case cJSON_False:
@@ -1440,7 +1438,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "false");
+            strcopy((char*)output, "false");
             return true;
 
         case cJSON_True:
@@ -1449,7 +1447,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "true");
+            strcopy((char*)output, "true");
             return true;
 
         case cJSON_Number:
@@ -1469,7 +1467,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            memcpy(output, item->valuestring, raw_length);
+            copybuf(output, item->valuestring, raw_length);
             return true;
         }
 
@@ -2001,7 +1999,7 @@ static cJSON *create_reference(const cJSON *item, const internal_hooks * const h
         return NULL;
     }
 
-    memcpy(reference, item, sizeof(cJSON));
+    copybuf(reference, item, sizeof(cJSON));
     reference->string = NULL;
     reference->type |= cJSON_IsReference;
     reference->next = reference->prev = NULL;

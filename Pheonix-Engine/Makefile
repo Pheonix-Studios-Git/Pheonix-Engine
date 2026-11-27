@@ -71,13 +71,13 @@ ifneq ($(TARGET_CPU),generic)
 endif
 
 CFLAGS := -fno-builtin -nostdlib $(CSTD) $(WARN) $(DEFS) $(INCS) -fno-strict-aliasing $(GLOBAL_MACROS) -O$(OPT_LEVEL) $(CPU_FLAGS) $(EXTRA)
-LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH) -lpstdlib -lm -lassimp -Wl,--no-as-needed -ldl $(EXTRA_LDFLAGS)
+LDFLAGS := -e _start -fno-builtin -nostdlib $(EXTRA) -L $(OUT_DIR) -lpstdlib -lm -lassimp -Wl,--no-as-needed -ldl $(EXTRA_LDFLAGS)
 
 # === Sources ===
 EXTRA_OBJ ?= libs/detour/loader.o # Detour usage, until PDL
 
 SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
-OBJ := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
+OBJ := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC)) $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH)/psrt.o
 
 # === Rules ===
 .PHONY: all clean clean-objects help dirs
@@ -91,7 +91,10 @@ dirs:
 $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT):
 	@make --no-print-directory -C $(PSTDLIB_DIR) OS=$(OS) ARCH=$(ARCH) BUILD=$(BUILD) CC=$(CC)
 
-$(TARGET): $(OBJ) $(EXTRA_OBJ) $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT)
+$(OUT_DIR)/libpstdlib.so: $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH)/libpstdlib.so
+	cp $(PSTDLIB_BIN_DIR)/$(OS)/$(ARCH)/libpstdlib.so $@
+
+$(TARGET): $(OBJ) $(EXTRA_OBJ) $(PSTDLIB_LINK_TARGET) $(PSTDLIB_PSRT) $(OUT_DIR)/libpstdlib.so
 	@echo "Linking $@"
 	$(CC) $(OBJ) $(EXTRA_OBJ) -o $@ $(LDFLAGS)
 

@@ -1,4 +1,3 @@
-#include <core/stdlib_pstdlib_connector.h>
 #include <pstdlib.h>
 #include <pio.h>
 
